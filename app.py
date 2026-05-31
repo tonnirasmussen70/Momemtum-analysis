@@ -27,6 +27,7 @@ with st.sidebar:
     st.write("**Signalmodel**")
     st.caption("Øg / Hold / Reducer baseres på risikojusteret momentum og 1M/3M trend.")
 
+
 @st.cache_data(show_spinner=False)
 def load_portfolio_from_uploads(files):
     frames = []
@@ -40,15 +41,17 @@ def load_portfolio_from_uploads(files):
     combined["Weight"] = combined["Exposure"] / total if total and total > 0 else None
     return combined
 
+
 if not uploaded_files:
     st.info("Upload én eller flere Excel-filer i venstre side for at starte analysen.")
     st.markdown(
         """
         **Forventede kolonner**  
-        Appen forsøger automatisk at finde kolonner som ticker/symbol/instrument, eksponering/markedsværdi, sektor, antal og kurs.
+        Appen forsøger automatisk at finde kolonner som ETF_Navn/navn, ISIN, ticker/symbol,
+        aktuel beholdning/eksponering/markedsværdi, sektor, antal og kurs.
 
         **Vigtigt**  
-        Tickerkoder skal helst være Yahoo Finance-kompatible, fx `SXR8.DE`, `DFEN.AS` eller tilsvarende børs-suffix.
+        ISIN bruges som stabil identifikation. Ticker bruges kun til kursdata, hvis den findes.
         """
     )
     st.stop()
@@ -60,13 +63,28 @@ except Exception as exc:
     st.stop()
 
 if portfolio.empty:
-    st.warning("Jeg kunne ikke læse porteføljen. Tjek at filen indeholder ticker/symbol/instrument.")
+    st.warning("Jeg kunne ikke læse porteføljen. Tjek at filen indeholder ETF_Navn, ISIN eller ticker.")
     st.stop()
 
 st.subheader("Porteføljeinput")
-st.dataframe(portfolio, use_container_width=True, hide_index=True)
+portfolio_cols = ["ETF_Navn", "ISIN", "Ticker", "Exposure", "Weight", "Sector", "Quantity", "InputPrice", "Source"]
+portfolio_cols = [c for c in portfolio_cols if c in portfolio.columns]
+st.dataframe(
+    portfolio[portfolio_cols],
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Exposure": st.column_config.NumberColumn("Eksponering", format="%.0f kr"),
+        "Weight": st.column_config.NumberColumn("Vægt", format="%.2%%"),
+        "Quantity": st.column_config.NumberColumn("Antal", format="%.0f"),
+        "InputPrice": st.column_config.NumberColumn("Kurs", format="%.2f"),
+    },
+)
 
-tickers = sorted(portfolio["Ticker"].dropna().unique().tolist())
+# Kursdata hentes ud fra Ticker-kolonnen. Hvis Ticker mangler, falder appen tilbage til ISIN,
+# men det kræver at market_data.py kan mappe ISIN til et gyldigt kurs-symbol.
+tickers = sorted(portfolio["Ticker"].dropna().astype(str).unique().tolist())
+
 
 @st.cache_data(show_spinner=True)
 def get_prices(tickers, period):
@@ -75,12 +93,18 @@ def get_prices(tickers, period):
 prices = get_prices(tickers, period)
 
 if prices.empty:
-    st.error("Jeg kunne ikke hente kursdata. Tjek tickerkoderne, især børs-suffix til europæiske ETF'er.")
+    st.error("Jeg kunne ikke hente kursdata. Tjek tickerkoder eller ISIN-mapping til kursdata.")
     st.stop()
 
 momentum = calculate_momentum(prices)
 report = portfolio.merge(momentum, on="Ticker", how="left")
 report = add_stop_loss(report)
+
+# Brug ETF_Navn som label overalt i rapporten. Fallback til Ticker hvis navn mangler.
+if "ETF_Navn" not in report.columns:
+    report["ETF_Navn"] = report.get("Ticker", "")
+report["ETF_Label"] = report["ETF_Navn"].fillna("").astype(str).str.strip()
+report.loc[report["ETF_Label"].eq("") | report["ETF_Label"].str.lower().eq("nan"), "ETF_Label"] = report["Ticker"]
 
 total_exposure = report["Exposure"].sum(skipna=True) if "Exposure" in report.columns else 0
 valid_score = report["MomentumScore"].dropna() if "MomentumScore" in report.columns else pd.Series(dtype=float)
@@ -88,48 +112,64 @@ weak = (report["Signal"].isin(["Reducer", "Sælg/undgå"])).sum() if "Signal" in
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Positioner", len(report))
-col2.metric("Samlet eksponering", f"{total_exposure:,.0f} kr".replace(",", "."))
+col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
 col3.metric("Median momentum score", f"{valid_score.median():.2f}" if not valid_score.empty else "-")
 col4.metric("Svage signaler", int(weak))
 
 st.subheader("Momentum ranking")
 show_cols = [
-    "Ticker", "Sector", "Weight", "1M", "3M", "6M", "12M", "Volatility", "Sharpe", "Sortino",
-    "MaxDrawdown", "MomentumScore", "StopPct", "StopPrice", "AlarmPct", "StopAction", "Signal"
+    "ETF_Label",
+    "Sector",
+    "Weight",
+    "1M",
+    "3M",
+    "6M",
+    "12M",
+    "Volatility",
+    "Sharpe",
+    "Sortino",
+    "MaxDrawdown",
+    "MomentumScore",
+    "StopPct",
+    "StopPrice",
+    "AlarmPct",
+    "StopAction",
+    "Signal",
 ]
-show_cols = [
-    "Ticker", "Sector", "Weight", "1M", "3M", "6M", "12M",
-    
+show_cols = [c for c in show_cols if c in report.columns]
+
 styled = report[show_cols].sort_values("MomentumScore", ascending=False, na_position="last")
 st.dataframe(
     styled,
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Weight": st.column_config.NumberColumn(format="%.2%%"),
-        "1M": st.column_config.NumberColumn(format="%.2%%"),
-        "3M": st.column_config.NumberColumn(format="%.2%%"),
-        "6M": st.column_config.NumberColumn(format="%.2%%"),
-        "12M": st.column_config.NumberColumn(format="%.2%%"),
-        "Volatility": st.column_config.NumberColumn(format="%.2%%"),
-        "MaxDrawdown": st.column_config.NumberColumn(format="%.2%%"),
-        "StopPct": st.column_config.NumberColumn(format="%.2%%"),
-        "AlarmPct": st.column_config.NumberColumn(format="%.2%%"),
-        "StopPrice": st.column_config.NumberColumn(format="%.2f"),
-        "MomentumScore": st.column_config.NumberColumn(format="%.2f"),
-        "Sharpe": st.column_config.NumberColumn(format="%.2f"),
-        "Sortino": st.column_config.NumberColumn(format="%.2f"),
-}
-
+        "ETF_Label": st.column_config.TextColumn("ETF Navn"),
+        "Sector": st.column_config.TextColumn("Sektor"),
+        "Weight": st.column_config.NumberColumn("Vægt", format="%.2%%"),
+        "1M": st.column_config.NumberColumn("1M", format="%.2%%"),
+        "3M": st.column_config.NumberColumn("3M", format="%.2%%"),
+        "6M": st.column_config.NumberColumn("6M", format="%.2%%"),
+        "12M": st.column_config.NumberColumn("12M", format="%.2%%"),
+        "Volatility": st.column_config.NumberColumn("Volatilitet", format="%.2%%"),
+        "MaxDrawdown": st.column_config.NumberColumn("Max drawdown", format="%.2%%"),
+        "StopPct": st.column_config.NumberColumn("Stop %", format="%.2%%"),
+        "AlarmPct": st.column_config.NumberColumn("Alarm %", format="%.2%%"),
+        "StopPrice": st.column_config.NumberColumn("Stopkurs", format="%.2f"),
+        "MomentumScore": st.column_config.NumberColumn("Momentum score", format="%.2f"),
+        "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
+        "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
+    },
 )
 
 left, right = st.columns(2)
 with left:
     st.subheader("1/3/6/12 mdr afkast")
     value_vars = [c for c in ["1M", "3M", "6M", "12M"] if c in report.columns]
-    chart_df = report.melt(id_vars="ETF_Navn", value_vars=value_vars, var_name="Periode", value_name="Afkast")
-    fig = px.bar(chart_df, x="ETF_Navn", y="Afkast", color="Periode", barmode="group")
+    chart_df = report.melt(id_vars="ETF_Label", value_vars=value_vars, var_name="Periode", value_name="Afkast")
+    fig = px.bar(chart_df, x="ETF_Label", y="Afkast", color="Periode", barmode="group")
     fig.update_yaxes(tickformat=".0%")
+    fig.update_xaxes(title_text="ETF", tickangle=-35)
     st.plotly_chart(fig, use_container_width=True)
 
 with right:
@@ -141,15 +181,28 @@ with right:
             y="MomentumScore",
             size="Exposure" if "Exposure" in report.columns else None,
             color="Signal" if "Signal" in report.columns else None,
-            hover_name="ETF_Navn",
+            hover_name="ETF_Label",
             hover_data=[c for c in ["Sector", "Sharpe", "Sortino", "MaxDrawdown"] if c in report.columns],
         )
+        fig2.update_xaxes(tickformat=".0%")
         st.plotly_chart(fig2, use_container_width=True)
 
 st.subheader("Rebalanceringsindikation")
-rebal_cols = ["ETF_Navn", "Sector", "Weight", "MomentumScore", "Sharpe", "Sortino", "Signal", "StopAction"]
+rebal_cols = ["ETF_Label", "Sector", "Weight", "MomentumScore", "Sharpe", "Sortino", "Signal", "StopAction"]
 rebal_cols = [c for c in rebal_cols if c in report.columns]
-st.dataframe(report[rebal_cols].sort_values("MomentumScore", ascending=False, na_position="last"), use_container_width=True, hide_index=True)
+st.dataframe(
+    report[rebal_cols].sort_values("MomentumScore", ascending=False, na_position="last"),
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "ETF_Label": st.column_config.TextColumn("ETF Navn"),
+        "Sector": st.column_config.TextColumn("Sektor"),
+        "Weight": st.column_config.NumberColumn("Vægt", format="%.2%%"),
+        "MomentumScore": st.column_config.NumberColumn("Momentum score", format="%.2f"),
+        "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
+        "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
+    },
+)
 
 csv = report.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Download CSV", csv, file_name="momentum_report.csv", mime="text/csv")
