@@ -153,11 +153,11 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Weight": st.column_config.NumberColumn("Vægt", format="%.2%%"),
-        "1M": st.column_config.NumberColumn("1M", format="%.2%%"),
-        "3M": st.column_config.NumberColumn("3M", format="%.2%%"),
-        "6M": st.column_config.NumberColumn("6M", format="%.2%%"),
-        "12M": st.column_config.NumberColumn("12M", format="%.2%%"),
+        styled["Weight"] = styled["Weight"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
+        styled["1M"] = styled["1M"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
+        styled["3M"] = styled["3M"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
+        styled["6M"] = styled["6M"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
+        styled["12M"] = styled["12M"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
         "Volatility": st.column_config.NumberColumn("Volatilitet", format="%.2%%"),
         "MaxDrawdown": st.column_config.NumberColumn("Max Drawdown", format="%.2%%"),
         "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
