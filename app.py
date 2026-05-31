@@ -68,7 +68,7 @@ if portfolio.empty:
 
 st.subheader("Porteføljeinput")
 
-input_cols = ["ETF_Navn", "Exposure", "Quantity", "InputPrice", "Weight", "Sector"]
+input_cols = ["ETF_Navn", "Quantity", "Exposure", "InputPrice", "Weight", "Sector"]
 input_cols = [c for c in input_cols if c in portfolio.columns]
 portfolio_display = portfolio[input_cols].copy()
 
