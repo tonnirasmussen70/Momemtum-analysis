@@ -146,7 +146,7 @@ show_cols = [c for c in show_cols if c in report.columns]
 styled = report[show_cols].copy()
 
 if "MomentumScore" in styled.columns:
-    styled = styled.sort_values("MomentumScore", ascending=False, na_position="last")
+    styled = styled.sort_values("MomentumScore", ascending=False, na_position="last"
 )
 
 # Formatér procentkolonner
