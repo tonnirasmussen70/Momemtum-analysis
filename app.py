@@ -135,7 +135,6 @@ show_cols = [
     "6M",
     "12M",
     "Volatility",
-    "Sortino",
     "MaxDrawdown",
     "MomentumScore",
     "StopPct",
