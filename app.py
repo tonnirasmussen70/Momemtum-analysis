@@ -175,26 +175,17 @@ st.dataframe(
         "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
     },
 )
-
-    for col in ["1M", "3M", "6M", "12M"]:
-    if col in styled.columns:
-        styled[col] = styled[col].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
+st.dataframe(
+    styled,
     use_container_width=True,
     hide_index=True,
     column_config={
-        styled["Weight"] = styled["Weight"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
-        styled["1M"] = styled["1M"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
-        styled["3M"] = styled["3M"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
-        styled["6M"] = styled["6M"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
-        styled["12M"] = styled["12M"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
-        "Volatility": st.column_config.NumberColumn("Volatilitet", format="%.2%%"),
-        "MaxDrawdown": st.column_config.NumberColumn("Max Drawdown", format="%.2%%"),
         "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
         "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
         "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
-}
+    },
 )
-
+   
 left, right = st.columns(2)
 with left:
     st.subheader("1/3/6/12 mdr afkast")
