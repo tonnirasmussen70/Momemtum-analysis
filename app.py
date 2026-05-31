@@ -141,8 +141,7 @@ show_cols = [
     "StopPrice",
     "AlarmPct",
     "StopAction",
-    "Signal",
-]
+    ]
 show_cols = [c for c in show_cols if c in report.columns]
 
 styled = report[show_cols].sort_values(
