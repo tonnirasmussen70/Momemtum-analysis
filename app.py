@@ -231,7 +231,6 @@ st.dataframe(
         "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
         "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
         "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
-    },
 )
     },
 )
