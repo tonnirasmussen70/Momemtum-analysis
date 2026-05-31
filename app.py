@@ -72,13 +72,20 @@ input_cols = ["ETF_Navn", "Exposure", "Weight", "Sector", "Quantity", "InputPric
 input_cols = [c for c in input_cols if c in portfolio.columns]
 portfolio_display = portfolio[input_cols].copy()
 
+portfolio_display = portfolio[input_cols].copy()
+
+portfolio_display["Exposure"] = portfolio_display["Exposure"].apply(
+    lambda x: f"{x:,.0f} kr".replace(",", ".")
+)
+
+portfolio_display["Weight"] = portfolio_display["Weight"].apply(
+    lambda x: f"{x:.2%}"
+)
 st.dataframe(
     portfolio_display,
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Exposure": st.column_config.NumberColumn("Eksponering", format="%.0f kr"),
-        "Weight": st.column_config.NumberColumn("Vægt", format="%.2%%"),
         "Quantity": st.column_config.NumberColumn("Antal", format="%.0f"),
         "InputPrice": st.column_config.NumberColumn("Kurs", format="%.2f"),
     },
