@@ -5,8 +5,20 @@ from typing import Optional
 
 import pandas as pd
 
-TICKER_COLUMNS = ["ticker", "symbol", "isin", "kode", "instrument", "navn", "name"]
-EXPOSURE_COLUMNS = ["eksponering", "nuværende eksponering", "market value", "markedsværdi", "value", "værdi"]
+NAME_COLUMNS = ["etf_navn", "etf navn", "navn", "name", "instrument", "instrumentnavn"]
+ISIN_COLUMNS = ["isin", "isin kode", "isin-kode"]
+TICKER_COLUMNS = ["ticker", "symbol", "kode"]
+EXPOSURE_COLUMNS = [
+    "aktuel beholdning",
+    "aktuel_beholdning",
+    "beholdning",
+    "nuværende eksponering",
+    "eksponering",
+    "market value",
+    "markedsværdi",
+    "value",
+    "værdi",
+]
 SECTOR_COLUMNS = ["sektor", "sector", "theme", "tema"]
 QUANTITY_COLUMNS = ["antal", "quantity", "shares", "stk"]
 PRICE_COLUMNS = ["kurs", "dags kurs", "price", "last", "close"]
@@ -33,7 +45,20 @@ def clean_number(value):
         return None
     if isinstance(value, (int, float)):
         return float(value)
-    text = str(value).replace(".", "").replace(",", ".").replace("%", "").strip()
+
+    text = (
+        str(value)
+        .replace("kr.", "")
+        .replace("kr", "")
+        .replace("DKK", "")
+        .replace("dkk", "")
+        .replace(" ", "")
+        .replace(".", "")
+        .replace(",", ".")
+        .replace("%", "")
+        .strip()
+    )
+
     try:
         return float(text)
     except ValueError:
@@ -48,18 +73,22 @@ def load_excel_file(file) -> pd.DataFrame:
 
 
 def standardize_portfolio(df: pd.DataFrame, default_source: str = "Uploaded") -> pd.DataFrame:
+    name_col = find_column(df, NAME_COLUMNS)
+    isin_col = find_column(df, ISIN_COLUMNS)
     ticker_col = find_column(df, TICKER_COLUMNS)
     exposure_col = find_column(df, EXPOSURE_COLUMNS)
     sector_col = find_column(df, SECTOR_COLUMNS)
     quantity_col = find_column(df, QUANTITY_COLUMNS)
     price_col = find_column(df, PRICE_COLUMNS)
 
-    if ticker_col is None:
-        raise ValueError("Jeg kan ikke finde en ticker/symbol/instrument-kolonne i filen.")
+    if isin_col is None and ticker_col is None and name_col is None:
+        raise ValueError("Jeg kan ikke finde ISIN, ticker eller ETF-navn i filen.")
 
-    out = pd.DataFrame()
-    out["Ticker"] = df[ticker_col].astype(str).str.strip()
-    out = out[out["Ticker"].notna() & (out["Ticker"] != "") & (out["Ticker"].str.lower() != "nan")]
+    out = pd.DataFrame(index=df.index)
+
+    out["ETF_Navn"] = df[name_col].astype(str).str.strip() if name_col else ""
+    out["ISIN"] = df[isin_col].astype(str).str.strip() if isin_col else ""
+    out["Ticker"] = df[ticker_col].astype(str).str.strip() if ticker_col else out["ISIN"]
 
     out["Exposure"] = df[exposure_col].map(clean_number) if exposure_col else None
     out["Sector"] = df[sector_col].astype(str).str.strip() if sector_col else "Ukendt"
@@ -67,12 +96,33 @@ def standardize_portfolio(df: pd.DataFrame, default_source: str = "Uploaded") ->
     out["InputPrice"] = df[price_col].map(clean_number) if price_col else None
     out["Source"] = default_source
 
+    out = out[
+        (
+            out["ISIN"].astype(str).str.strip().ne("")
+            | out["Ticker"].astype(str).str.strip().ne("")
+            | out["ETF_Navn"].astype(str).str.strip().ne("")
+        )
+    ]
+
     if out["Exposure"].isna().all() and out["Quantity"].notna().any() and out["InputPrice"].notna().any():
         out["Exposure"] = out["Quantity"] * out["InputPrice"]
 
     total = out["Exposure"].sum(skipna=True)
     out["Weight"] = out["Exposure"] / total if total and total > 0 else None
-    return out.reset_index(drop=True)
+
+    preferred_cols = [
+        "ETF_Navn",
+        "ISIN",
+        "Ticker",
+        "Exposure",
+        "Weight",
+        "Sector",
+        "Quantity",
+        "InputPrice",
+        "Source",
+    ]
+
+    return out[preferred_cols].reset_index(drop=True)
 
 
 def load_default_files(data_dir: str | Path = "data") -> pd.DataFrame:
@@ -82,8 +132,10 @@ def load_default_files(data_dir: str | Path = "data") -> pd.DataFrame:
         if path.exists():
             raw = load_excel_file(path)
             frames.append(standardize_portfolio(raw, default_source=path.name))
+
     if not frames:
-        return pd.DataFrame(columns=["Ticker", "Exposure", "Sector", "Quantity", "InputPrice", "Source", "Weight"])
+        return pd.DataFrame(columns=["ETF_Navn", "ISIN", "Ticker", "Exposure", "Weight", "Sector", "Quantity", "InputPrice", "Source"])
+
     combined = pd.concat(frames, ignore_index=True)
     total = combined["Exposure"].sum(skipna=True)
     combined["Weight"] = combined["Exposure"] / total if total and total > 0 else None
