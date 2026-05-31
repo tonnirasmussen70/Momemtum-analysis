@@ -66,7 +66,18 @@ if portfolio.empty:
 portfolio["YahooTicker"] = portfolio["Ticker"].map(normalize_ticker)
 
 st.subheader("Porteføljeinput")
-st.dataframe(portfolio, use_container_width=True, hide_index=True)
+input_cols = [c for c in ["Ticker", "ISIN", "ETFName", "Exposure", "Sector", "Quantity", "InputPrice", "Source", "Weight"] if c in portfolio.columns]
+st.dataframe(
+    portfolio[input_cols],
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "ETFName": st.column_config.TextColumn("ETF navn"),
+        "Weight": st.column_config.NumberColumn("Weight", format="%.1%%"),
+        "Exposure": st.column_config.NumberColumn("Exposure", format="%.0f kr"),
+        "InputPrice": st.column_config.NumberColumn("InputPrice", format="%.2f"),
+    },
+)
 
 tickers = sorted(portfolio["Ticker"].dropna().unique().tolist())
 
@@ -99,7 +110,7 @@ col4.metric("Svage signaler", int(weak))
 
 st.subheader("Momentum ranking")
 show_cols = [
-    "Ticker", "Sector", "Weight", "1M", "3M", "6M", "12M", "Volatility", "Sharpe", "Sortino",
+    "Ticker", "ISIN", "ETFName", "Sector", "Weight", "1M", "3M", "6M", "12M", "Volatility", "Sharpe", "Sortino",
     "MaxDrawdown", "MomentumScore", "StopPct", "StopPrice", "AlarmPct", "StopAction", "Signal"
 ]
 show_cols = [c for c in show_cols if c in report.columns]
@@ -130,7 +141,7 @@ left, right = st.columns(2)
 with left:
     st.subheader("1/3/6/12 mdr afkast")
     value_vars = [c for c in ["1M", "3M", "6M", "12M"] if c in report.columns]
-    chart_df = report.melt(id_vars="Ticker", value_vars=value_vars, var_name="Periode", value_name="Afkast")
+    chart_df = report.melt(id_vars=[c for c in ["Ticker", "ETFName"] if c in report.columns], value_vars=value_vars, var_name="Periode", value_name="Afkast")
     fig = px.bar(chart_df, x="Ticker", y="Afkast", color="Periode", barmode="group")
     st.plotly_chart(fig, use_container_width=True)
 
@@ -144,12 +155,12 @@ with right:
             size="Exposure" if "Exposure" in report.columns else None,
             color="Signal" if "Signal" in report.columns else None,
             hover_name="Ticker",
-            hover_data=[c for c in ["Sector", "Sharpe", "Sortino", "MaxDrawdown"] if c in report.columns],
+            hover_data=[c for c in ["ETFName", "ISIN", "Sector", "Sharpe", "Sortino", "MaxDrawdown"] if c in report.columns],
         )
         st.plotly_chart(fig2, use_container_width=True)
 
 st.subheader("Rebalanceringsindikation")
-rebal_cols = ["Ticker", "Sector", "Weight", "MomentumScore", "Sharpe", "Sortino", "Signal", "StopAction"]
+rebal_cols = ["Ticker", "ISIN", "ETFName", "Sector", "Weight", "MomentumScore", "Sharpe", "Sortino", "Signal", "StopAction"]
 rebal_cols = [c for c in rebal_cols if c in report.columns]
 st.dataframe(report[rebal_cols].sort_values("MomentumScore", ascending=False, na_position="last"), use_container_width=True, hide_index=True)
 

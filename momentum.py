@@ -1,90 +1,133 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Optional
-
+import re
 import pandas as pd
+import yfinance as yf
 
-TICKER_COLUMNS = ["ticker", "symbol", "isin", "kode", "instrument", "navn", "name"]
-EXPOSURE_COLUMNS = ["eksponering", "nuværende eksponering", "market value", "markedsværdi", "value", "værdi"]
-SECTOR_COLUMNS = ["sektor", "sector", "theme", "tema"]
-QUANTITY_COLUMNS = ["antal", "quantity", "shares", "stk"]
-PRICE_COLUMNS = ["kurs", "dags kurs", "price", "last", "close"]
+# Mapping from common broker/exchange notation to Yahoo Finance suffixes.
+# Example: DFEN:xetr -> DFEN.DE
+EXCHANGE_SUFFIX_MAP = {
+    "xetr": ".DE",
+    "ger": ".DE",
+    "fwb": ".F",
+    "fra": ".F",
+    "ams": ".AS",
+    "as": ".AS",
+    "par": ".PA",
+    "pa": ".PA",
+    "mil": ".MI",
+    "mi": ".MI",
+    "lon": ".L",
+    "lse": ".L",
+    "sto": ".ST",
+    "st": ".ST",
+    "hel": ".HE",
+    "he": ".HE",
+    "cph": ".CO",
+    "xcse": ".CO",
+    "co": ".CO",
+    "swi": ".SW",
+    "six": ".SW",
+    "br": ".BR",
+    "lis": ".LS",
+    "mad": ".MC",
+}
 
 
-def _normalize_col(col: str) -> str:
-    return str(col).strip().lower()
+def normalize_ticker(ticker: str) -> str:
+    """Convert common European broker notation to Yahoo Finance notation.
+
+    Examples:
+    - SEC0:xetr -> SEC0.DE
+    - DFEN:xetr -> DFEN.DE
+    - SXR8:xetr -> SXR8.DE
+    - NOVO-B:xcse -> NOVO-B.CO
+    """
+    if not isinstance(ticker, str):
+        return ""
+
+    t = ticker.strip()
+    if not t:
+        return ""
+
+    # Remove spaces and normalize separators sometimes exported from brokers.
+    t = t.replace(" ", "")
+
+    # Already Yahoo-compatible, e.g. SXR8.DE
+    if re.search(r"\.[A-Za-z]{1,4}$", t):
+        return t.upper()
+
+    # Broker format: TICKER:exchange
+    if ":" in t:
+        symbol, exchange = t.split(":", 1)
+        suffix = EXCHANGE_SUFFIX_MAP.get(exchange.lower())
+        if suffix:
+            return f"{symbol.upper()}{suffix}"
+        return symbol.upper()
+
+    return t.upper()
 
 
-def find_column(df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
-    normalized = {_normalize_col(c): c for c in df.columns}
-    for candidate in candidates:
-        if candidate in normalized:
-            return normalized[candidate]
-    for col in df.columns:
-        low = _normalize_col(col)
-        if any(candidate in low for candidate in candidates):
-            return col
-    return None
-
-
-def clean_number(value):
-    if pd.isna(value):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value).replace(".", "").replace(",", ".").replace("%", "").strip()
+def _download_one(yahoo_ticker: str, period: str) -> pd.Series | None:
     try:
-        return float(text)
-    except ValueError:
+        data = yf.download(
+            yahoo_ticker,
+            period=period,
+            auto_adjust=True,
+            progress=False,
+            threads=False,
+        )
+    except Exception:
         return None
 
+    if data is None or data.empty or "Close" not in data.columns:
+        return None
 
-def load_excel_file(file) -> pd.DataFrame:
-    df = pd.read_excel(file)
-    df = df.dropna(how="all")
-    df.columns = [str(c).strip() for c in df.columns]
-    return df
-
-
-def standardize_portfolio(df: pd.DataFrame, default_source: str = "Uploaded") -> pd.DataFrame:
-    ticker_col = find_column(df, TICKER_COLUMNS)
-    exposure_col = find_column(df, EXPOSURE_COLUMNS)
-    sector_col = find_column(df, SECTOR_COLUMNS)
-    quantity_col = find_column(df, QUANTITY_COLUMNS)
-    price_col = find_column(df, PRICE_COLUMNS)
-
-    if ticker_col is None:
-        raise ValueError("Jeg kan ikke finde en ticker/symbol/instrument-kolonne i filen.")
-
-    out = pd.DataFrame()
-    out["Ticker"] = df[ticker_col].astype(str).str.strip()
-    out = out[out["Ticker"].notna() & (out["Ticker"] != "") & (out["Ticker"].str.lower() != "nan")]
-
-    out["Exposure"] = df[exposure_col].map(clean_number) if exposure_col else None
-    out["Sector"] = df[sector_col].astype(str).str.strip() if sector_col else "Ukendt"
-    out["Quantity"] = df[quantity_col].map(clean_number) if quantity_col else None
-    out["InputPrice"] = df[price_col].map(clean_number) if price_col else None
-    out["Source"] = default_source
-
-    if out["Exposure"].isna().all() and out["Quantity"].notna().any() and out["InputPrice"].notna().any():
-        out["Exposure"] = out["Quantity"] * out["InputPrice"]
-
-    total = out["Exposure"].sum(skipna=True)
-    out["Weight"] = out["Exposure"] / total if total and total > 0 else None
-    return out.reset_index(drop=True)
+    close = data["Close"].dropna()
+    if close.empty:
+        return None
+    return close
 
 
-def load_default_files(data_dir: str | Path = "data") -> pd.DataFrame:
-    data_dir = Path(data_dir)
-    frames = []
-    for path in [data_dir / "AI_ETF.xlsx", data_dir / "AI_Stock.xlsx", data_dir / "AI_portfolio.xlsx"]:
-        if path.exists():
-            raw = load_excel_file(path)
-            frames.append(standardize_portfolio(raw, default_source=path.name))
-    if not frames:
-        return pd.DataFrame(columns=["Ticker", "Exposure", "Sector", "Quantity", "InputPrice", "Source", "Weight"])
-    combined = pd.concat(frames, ignore_index=True)
-    total = combined["Exposure"].sum(skipna=True)
-    combined["Weight"] = combined["Exposure"] / total if total and total > 0 else None
-    return combined
+def fetch_prices(tickers: list[str], period: str = "18mo") -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Fetch adjusted close prices.
+
+    Returns:
+        prices: columns are ORIGINAL uploaded tickers, so later merge works.
+        mapping: dataframe showing OriginalTicker, YahooTicker and Status.
+    """
+    original_tickers = []
+    for t in tickers:
+        if isinstance(t, str) and t.strip() and t not in original_tickers:
+            original_tickers.append(t.strip())
+
+    if not original_tickers:
+        return pd.DataFrame(), pd.DataFrame()
+
+    series_map: dict[str, pd.Series] = {}
+    mapping_rows = []
+
+    for original in original_tickers:
+        yahoo_ticker = normalize_ticker(original)
+        close = _download_one(yahoo_ticker, period)
+
+        status = "OK" if close is not None else "Ingen data"
+        mapping_rows.append(
+            {
+                "OriginalTicker": original,
+                "YahooTicker": yahoo_ticker,
+                "Status": status,
+            }
+        )
+
+        if close is not None:
+            close.name = original
+            series_map[original] = close
+
+    mapping = pd.DataFrame(mapping_rows)
+
+    if not series_map:
+        return pd.DataFrame(), mapping
+
+    prices = pd.concat(series_map.values(), axis=1).dropna(how="all")
+    return prices, mapping

@@ -1,133 +1,72 @@
 from __future__ import annotations
 
-import re
+import numpy as np
 import pandas as pd
-import yfinance as yf
 
-# Mapping from common broker/exchange notation to Yahoo Finance suffixes.
-# Example: DFEN:xetr -> DFEN.DE
-EXCHANGE_SUFFIX_MAP = {
-    "xetr": ".DE",
-    "ger": ".DE",
-    "fwb": ".F",
-    "fra": ".F",
-    "ams": ".AS",
-    "as": ".AS",
-    "par": ".PA",
-    "pa": ".PA",
-    "mil": ".MI",
-    "mi": ".MI",
-    "lon": ".L",
-    "lse": ".L",
-    "sto": ".ST",
-    "st": ".ST",
-    "hel": ".HE",
-    "he": ".HE",
-    "cph": ".CO",
-    "xcse": ".CO",
-    "co": ".CO",
-    "swi": ".SW",
-    "six": ".SW",
-    "br": ".BR",
-    "lis": ".LS",
-    "mad": ".MC",
-}
+from .risk_metrics import annualized_volatility, max_drawdown, sharpe_ratio, sortino_ratio
+
+PERIODS = {"1M": 21, "3M": 63, "6M": 126, "12M": 252}
 
 
-def normalize_ticker(ticker: str) -> str:
-    """Convert common European broker notation to Yahoo Finance notation.
-
-    Examples:
-    - SEC0:xetr -> SEC0.DE
-    - DFEN:xetr -> DFEN.DE
-    - SXR8:xetr -> SXR8.DE
-    - NOVO-B:xcse -> NOVO-B.CO
-    """
-    if not isinstance(ticker, str):
-        return ""
-
-    t = ticker.strip()
-    if not t:
-        return ""
-
-    # Remove spaces and normalize separators sometimes exported from brokers.
-    t = t.replace(" ", "")
-
-    # Already Yahoo-compatible, e.g. SXR8.DE
-    if re.search(r"\.[A-Za-z]{1,4}$", t):
-        return t.upper()
-
-    # Broker format: TICKER:exchange
-    if ":" in t:
-        symbol, exchange = t.split(":", 1)
-        suffix = EXCHANGE_SUFFIX_MAP.get(exchange.lower())
-        if suffix:
-            return f"{symbol.upper()}{suffix}"
-        return symbol.upper()
-
-    return t.upper()
+def pct_return(series: pd.Series, days: int) -> float:
+    series = series.dropna()
+    if len(series) <= days:
+        return np.nan
+    return float(series.iloc[-1] / series.iloc[-days - 1] - 1)
 
 
-def _download_one(yahoo_ticker: str, period: str) -> pd.Series | None:
-    try:
-        data = yf.download(
-            yahoo_ticker,
-            period=period,
-            auto_adjust=True,
-            progress=False,
-            threads=False,
-        )
-    except Exception:
-        return None
-
-    if data is None or data.empty or "Close" not in data.columns:
-        return None
-
-    close = data["Close"].dropna()
-    if close.empty:
-        return None
-    return close
+def score_row(row: pd.Series) -> float:
+    weights = {"1M": 0.15, "3M": 0.30, "6M": 0.30, "12M": 0.25}
+    raw = 0.0
+    used = 0.0
+    for key, weight in weights.items():
+        value = row.get(key)
+        if pd.notna(value):
+            raw += value * weight
+            used += weight
+    momentum = raw / used if used else np.nan
+    vol = row.get("Volatility")
+    if pd.isna(momentum):
+        return np.nan
+    if pd.notna(vol) and vol > 0:
+        return float(momentum / vol)
+    return float(momentum)
 
 
-def fetch_prices(tickers: list[str], period: str = "18mo") -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Fetch adjusted close prices.
+def action_signal(row: pd.Series) -> str:
+    score = row.get("MomentumScore")
+    m1 = row.get("1M")
+    m3 = row.get("3M")
+    m6 = row.get("6M")
+    if pd.isna(score):
+        return "Datamangel"
+    if score > 0.75 and m1 > 0 and m3 > 0:
+        return "Øg"
+    if score > 0.25 and m3 > 0:
+        return "Hold"
+    if score < 0 and (m1 < 0 or m3 < 0):
+        return "Reducer"
+    if m1 < 0 and m3 < 0 and m6 < 0:
+        return "Sælg/undgå"
+    return "Afvent"
 
-    Returns:
-        prices: columns are ORIGINAL uploaded tickers, so later merge works.
-        mapping: dataframe showing OriginalTicker, YahooTicker and Status.
-    """
-    original_tickers = []
-    for t in tickers:
-        if isinstance(t, str) and t.strip() and t not in original_tickers:
-            original_tickers.append(t.strip())
 
-    if not original_tickers:
-        return pd.DataFrame(), pd.DataFrame()
-
-    series_map: dict[str, pd.Series] = {}
-    mapping_rows = []
-
-    for original in original_tickers:
-        yahoo_ticker = normalize_ticker(original)
-        close = _download_one(yahoo_ticker, period)
-
-        status = "OK" if close is not None else "Ingen data"
-        mapping_rows.append(
-            {
-                "OriginalTicker": original,
-                "YahooTicker": yahoo_ticker,
-                "Status": status,
-            }
-        )
-
-        if close is not None:
-            close.name = original
-            series_map[original] = close
-
-    mapping = pd.DataFrame(mapping_rows)
-
-    if not series_map:
-        return pd.DataFrame(), mapping
-
-    prices = pd.concat(series_map.values(), axis=1).dropna(how="all")
-    return prices, mapping
+def calculate_momentum(prices: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for ticker in prices.columns:
+        s = prices[ticker].dropna()
+        returns = s.pct_change().dropna()
+        row = {"Ticker": ticker, "LastPrice": float(s.iloc[-1]) if not s.empty else np.nan}
+        for label, days in PERIODS.items():
+            row[label] = pct_return(s, days)
+        row["Volatility"] = annualized_volatility(returns)
+        row["Sharpe"] = sharpe_ratio(returns)
+        row["Sortino"] = sortino_ratio(returns)
+        row["MaxDrawdown"] = max_drawdown(s)
+        rows.append(row)
+    result = pd.DataFrame(rows)
+    if result.empty:
+        return result
+    result["MomentumScore"] = result.apply(score_row, axis=1)
+    result["Signal"] = result.apply(action_signal, axis=1)
+    return result.sort_values("MomentumScore", ascending=False, na_position="last").reset_index(drop=True)

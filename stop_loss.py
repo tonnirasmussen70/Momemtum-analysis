@@ -1,45 +1,40 @@
 from __future__ import annotations
 
-from io import BytesIO
-
+import numpy as np
 import pandas as pd
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import landscape, A4
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+TRADING_DAYS = 252
 
 
-def format_pct(x):
-    if pd.isna(x):
-        return "-"
-    return f"{x:.1%}"
+def max_drawdown(series: pd.Series) -> float:
+    series = series.dropna()
+    if series.empty:
+        return np.nan
+    cumulative = (1 + series.pct_change().dropna()).cumprod()
+    peak = cumulative.cummax()
+    drawdown = cumulative / peak - 1
+    return float(drawdown.min()) if not drawdown.empty else np.nan
 
 
-def create_pdf(df: pd.DataFrame) -> bytes:
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=24, leftMargin=24, topMargin=24, bottomMargin=24)
-    styles = getSampleStyleSheet()
-    story = [Paragraph("Momentumrapport MVP", styles["Title"]), Spacer(1, 12)]
+def sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
+    returns = returns.dropna()
+    if returns.empty or returns.std() == 0:
+        return np.nan
+    excess_daily = returns - risk_free_rate / TRADING_DAYS
+    return float(np.sqrt(TRADING_DAYS) * excess_daily.mean() / returns.std())
 
-    cols = ["Ticker", "Sector", "Weight", "1M", "3M", "6M", "12M", "Sharpe", "Sortino", "StopPct", "Signal"]
-    visible = [c for c in cols if c in df.columns]
-    table_data = [visible]
-    for _, row in df.head(25).iterrows():
-        table_data.append([
-            format_pct(row[c]) if c in ["Weight", "1M", "3M", "6M", "12M", "StopPct"] else
-            (f"{row[c]:.2f}" if c in ["Sharpe", "Sortino"] and pd.notna(row[c]) else str(row[c]))
-            for c in visible
-        ])
 
-    table = Table(table_data, repeatRows=1)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
-    ]))
-    story.append(table)
-    doc.build(story)
-    return buffer.getvalue()
+def sortino_ratio(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
+    returns = returns.dropna()
+    downside = returns[returns < 0]
+    if returns.empty or downside.std() == 0 or downside.empty:
+        return np.nan
+    excess_daily = returns - risk_free_rate / TRADING_DAYS
+    return float(np.sqrt(TRADING_DAYS) * excess_daily.mean() / downside.std())
+
+
+def annualized_volatility(returns: pd.Series) -> float:
+    returns = returns.dropna()
+    if returns.empty:
+        return np.nan
+    return float(returns.std() * np.sqrt(TRADING_DAYS))
