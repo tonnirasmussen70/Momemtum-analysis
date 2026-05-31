@@ -129,7 +129,6 @@ col4.metric("Svage signaler", int(weak))
 st.subheader("Momentum ranking")
 show_cols = [
     "ETF_Label",
-    "Sector",
     "Weight",
     "1M",
     "3M",
@@ -154,22 +153,17 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "ETF_Label": st.column_config.TextColumn("ETF Navn"),
-        "Sector": st.column_config.TextColumn("Sektor"),
         "Weight": st.column_config.NumberColumn("Vægt", format="%.2%%"),
         "1M": st.column_config.NumberColumn("1M", format="%.2%%"),
         "3M": st.column_config.NumberColumn("3M", format="%.2%%"),
         "6M": st.column_config.NumberColumn("6M", format="%.2%%"),
         "12M": st.column_config.NumberColumn("12M", format="%.2%%"),
         "Volatility": st.column_config.NumberColumn("Volatilitet", format="%.2%%"),
-        "MaxDrawdown": st.column_config.NumberColumn("Max drawdown", format="%.2%%"),
-        "StopPct": st.column_config.NumberColumn("Stop %", format="%.2%%"),
-        "AlarmPct": st.column_config.NumberColumn("Alarm %", format="%.2%%"),
-        "StopPrice": st.column_config.NumberColumn("Stopkurs", format="%.2f"),
-        "MomentumScore": st.column_config.NumberColumn("Momentum score", format="%.2f"),
+        "MaxDrawdown": st.column_config.NumberColumn("Max Drawdown", format="%.2%%"),
+        "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
         "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
         "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
-    },
+}
 )
 
 left, right = st.columns(2)
