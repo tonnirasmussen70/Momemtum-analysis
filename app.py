@@ -97,27 +97,29 @@ show_cols = [
     "Ticker", "Sector", "Weight", "1M", "3M", "6M", "12M", "Volatility", "Sharpe", "Sortino",
     "MaxDrawdown", "MomentumScore", "StopPct", "StopPrice", "AlarmPct", "StopAction", "Signal"
 ]
-show_cols = [c for c in show_cols if c in report.columns]
-
+show_cols = [
+    "Ticker", "Sector", "Weight", "1M", "3M", "6M", "12M",
+    
 styled = report[show_cols].sort_values("MomentumScore", ascending=False, na_position="last")
 st.dataframe(
     styled,
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Weight": st.column_config.NumberColumn(format="%.1%%"),
-        "1M": st.column_config.NumberColumn(format="%.1%%"),
-        "3M": st.column_config.NumberColumn(format="%.1%%"),
-        "6M": st.column_config.NumberColumn(format="%.1%%"),
-        "12M": st.column_config.NumberColumn(format="%.1%%"),
-        "Volatility": st.column_config.NumberColumn(format="%.1%%"),
-        "MaxDrawdown": st.column_config.NumberColumn(format="%.1%%"),
-        "StopPct": st.column_config.NumberColumn(format="%.1%%"),
-        "AlarmPct": st.column_config.NumberColumn(format="%.1%%"),
+        "Weight": st.column_config.NumberColumn(format="%.2%%"),
+        "1M": st.column_config.NumberColumn(format="%.2%%"),
+        "3M": st.column_config.NumberColumn(format="%.2%%"),
+        "6M": st.column_config.NumberColumn(format="%.2%%"),
+        "12M": st.column_config.NumberColumn(format="%.2%%"),
+        "Volatility": st.column_config.NumberColumn(format="%.2%%"),
+        "MaxDrawdown": st.column_config.NumberColumn(format="%.2%%"),
+        "StopPct": st.column_config.NumberColumn(format="%.2%%"),
+        "AlarmPct": st.column_config.NumberColumn(format="%.2%%"),
         "StopPrice": st.column_config.NumberColumn(format="%.2f"),
         "MomentumScore": st.column_config.NumberColumn(format="%.2f"),
         "Sharpe": st.column_config.NumberColumn(format="%.2f"),
         "Sortino": st.column_config.NumberColumn(format="%.2f"),
+}
     },
 )
 
@@ -125,8 +127,9 @@ left, right = st.columns(2)
 with left:
     st.subheader("1/3/6/12 mdr afkast")
     value_vars = [c for c in ["1M", "3M", "6M", "12M"] if c in report.columns]
-    chart_df = report.melt(id_vars="Ticker", value_vars=value_vars, var_name="Periode", value_name="Afkast")
-    fig = px.bar(chart_df, x="Ticker", y="Afkast", color="Periode", barmode="group")
+    chart_df = report.melt(id_vars="ETF_Navn", value_vars=value_vars, var_name="Periode", value_name="Afkast")
+    fig = px.bar(chart_df, x="ETF_Navn", y="Afkast", color="Periode", barmode="group")
+    fig.update_yaxes(tickformat=".0%")
     st.plotly_chart(fig, use_container_width=True)
 
 with right:
@@ -138,13 +141,13 @@ with right:
             y="MomentumScore",
             size="Exposure" if "Exposure" in report.columns else None,
             color="Signal" if "Signal" in report.columns else None,
-            hover_name="Ticker",
+            hover_name="ETF_Navn",
             hover_data=[c for c in ["Sector", "Sharpe", "Sortino", "MaxDrawdown"] if c in report.columns],
         )
         st.plotly_chart(fig2, use_container_width=True)
 
 st.subheader("Rebalanceringsindikation")
-rebal_cols = ["Ticker", "Sector", "Weight", "MomentumScore", "Sharpe", "Sortino", "Signal", "StopAction"]
+rebal_cols = ["ETF_Navn", "Sector", "Weight", "MomentumScore", "Sharpe", "Sortino", "Signal", "StopAction"]
 rebal_cols = [c for c in rebal_cols if c in report.columns]
 st.dataframe(report[rebal_cols].sort_values("MomentumScore", ascending=False, na_position="last"), use_container_width=True, hide_index=True)
 
