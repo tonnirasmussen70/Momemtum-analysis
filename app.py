@@ -67,8 +67,11 @@ if portfolio.empty:
     st.stop()
 
 st.subheader("Porteføljeinput")
-portfolio_cols = ["ETF_Navn", "Ticker", "Exposure", "Weight", "Sector", "Quantity", "InputPrice"]
-portfolio_cols = [c for c in portfolio_cols if c in portfolio.columns]
+
+input_cols = ["ETF_Navn", "Ticker", "Exposure", "Weight", "Sector", "Quantity", "InputPrice"]
+input_cols = [c for c in input_cols if c in portfolio.columns]
+portfolio_display = portfolio[input_cols].copy()
+
 st.dataframe(
     portfolio_display,
     use_container_width=True,
