@@ -210,14 +210,26 @@ with right:
 st.subheader("Rebalanceringsindikation")
 rebal_cols = ["ETF_Label", "Sector", "Weight", "MomentumScore", "Sharpe", "Sortino", "Signal", "StopAction"]
 rebal_cols = [c for c in rebal_cols if c in report.columns]
+rebal_df = report[rebal_cols].copy()
+
+if "Weight" in rebal_df.columns:
+    rebal_df["Weight"] = rebal_df["Weight"].apply(
+        lambda x: f"{x:.2%}" if pd.notnull(x) else ""
+    )
+
+rebal_df = rebal_df.sort_values(
+    "MomentumScore",
+    ascending=False,
+    na_position="last"
+)
 st.dataframe(
-    report[rebal_cols].sort_values("MomentumScore", ascending=False, na_position="last"),
+    rebal_df,
     use_container_width=True,
     hide_index=True,
+)
     column_config={
         "ETF_Label": st.column_config.TextColumn("ETF Navn"),
         "Sector": st.column_config.TextColumn("Sektor"),
-        "Weight": st.column_config.NumberColumn("Vægt", format="%.2%%"),
         "MomentumScore": st.column_config.NumberColumn("Momentum score", format="%.2f"),
         "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
         "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
