@@ -149,7 +149,11 @@ show_cols = [c for c in show_cols if c in report.columns]
 
 styled = report[show_cols].sort_values("MomentumScore", ascending=False, na_position="last")
 st.dataframe(
-    styled,
+    styled["Weight"] = styled["Weight"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
+
+    for col in ["1M", "3M", "6M", "12M"]:
+    if col in styled.columns:
+        styled[col] = styled[col].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
     use_container_width=True,
     hide_index=True,
     column_config={
