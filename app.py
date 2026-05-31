@@ -226,13 +226,13 @@ st.dataframe(
     rebal_df,
     use_container_width=True,
     hide_index=True,
-)
     column_config={
         "ETF_Label": st.column_config.TextColumn("ETF Navn"),
-        "Sector": st.column_config.TextColumn("Sektor"),
-        "MomentumScore": st.column_config.NumberColumn("Momentum score", format="%.2f"),
+        "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
         "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
         "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
+    },
+)
     },
 )
 
