@@ -120,7 +120,7 @@ st.dataframe(
         "Sharpe": st.column_config.NumberColumn(format="%.2f"),
         "Sortino": st.column_config.NumberColumn(format="%.2f"),
 }
-    },
+
 )
 
 left, right = st.columns(2)
