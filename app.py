@@ -132,9 +132,6 @@ col1.metric("Positioner", len(report))
 col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
 col3.metric("Portefølje Sharpe", f"{portfolio_sharpe:.2f}" if portfolio_sharpe is not None else "-")
 col4.metric("Portefølje Sortino", f"{portfolio_sortino:.2f}" if portfolio_sortino is not None else "-")
-col5.metric("Svage signaler", int(weak))
-
-col3.metric("Svage signaler", int(weak))
 
 st.subheader("Momentum ranking")
 show_cols = [
