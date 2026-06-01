@@ -346,7 +346,7 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
 )
-},
+
 )
 
 csv = report.to_csv(index=False).encode("utf-8-sig")
