@@ -295,8 +295,41 @@ st.dataframe(
 )
 
 st.subheader("Rebalanceringsindikation")
-rebal_cols = ["ETF_Label", "Sector", "Weight", "MomentumScore", "Sharpe", "Sortino", "Signal", "StopAction"]
-rebal_cols = [c for c in rebal_cols if c in report.columns]
+# --- Rebalanceringsmål ---
+portfolio_value = report["Exposure"].sum()
+
+buy_mask = report["Signal"] == "Øg"
+hold_mask = report["Signal"] == "Hold"
+reduce_mask = report["Signal"].isin(["Afvent", "Reducer", "Sælg/undgå"])
+
+report["TargetWeight"] = report["Weight"]
+
+# Øg → +20%
+report.loc[buy_mask, "TargetWeight"] *= 1.20
+
+# Hold → uændret
+report.loc[hold_mask, "TargetWeight"] *= 1.00
+
+# Reducer → -20%
+report.loc[reduce_mask, "TargetWeight"] *= 0.80
+
+# Normaliser tilbage til 100%
+report["TargetWeight"] = (
+    report["TargetWeight"] /
+    report["TargetWeight"].sum()
+)
+
+# Beregn target eksponering
+report["TargetExposure"] = (
+    report["TargetWeight"] *
+    portfolio_value
+)
+
+# Beregn handel
+report["TradeDKK"] = (
+    report["TargetExposure"] -
+    report["Exposure"]
+)
 rebal_df = report[rebal_cols].copy()
 
 if "Weight" in rebal_df.columns:
