@@ -293,9 +293,8 @@ st.dataframe(
     use_container_width=True,
     hide_index=True
 )
-
 st.subheader("Rebalanceringsindikation")
-# --- Rebalanceringsmål ---
+
 portfolio_value = report["Exposure"].sum()
 
 buy_mask = report["Signal"] == "Øg"
@@ -304,49 +303,50 @@ reduce_mask = report["Signal"].isin(["Afvent", "Reducer", "Sælg/undgå"])
 
 report["TargetWeight"] = report["Weight"]
 
-# Øg → +20%
 report.loc[buy_mask, "TargetWeight"] *= 1.20
-
-# Hold → uændret
 report.loc[hold_mask, "TargetWeight"] *= 1.00
-
-# Reducer → -20%
 report.loc[reduce_mask, "TargetWeight"] *= 0.80
 
-# Normaliser tilbage til 100%
-report["TargetWeight"] = (
-    report["TargetWeight"] /
-    report["TargetWeight"].sum()
-)
+report["TargetWeight"] = report["TargetWeight"] / report["TargetWeight"].sum()
+report["TargetExposure"] = report["TargetWeight"] * portfolio_value
+report["TradeDKK"] = report["TargetExposure"] - report["Exposure"]
 
-# Beregn target eksponering
-report["TargetExposure"] = (
-    report["TargetWeight"] *
-    portfolio_value
-)
+rebal_cols = [
+    "ETF_Label",
+    "Sector",
+    "Weight",
+    "TargetWeight",
+    "TradeDKK",
+    "MomentumScore",
+    "Sharpe",
+    "Sortino",
+    "Signal",
+]
 
-# Beregn handel
-report["TradeDKK"] = (
-    report["TargetExposure"] -
-    report["Exposure"]
-)
+rebal_cols = [c for c in rebal_cols if c in report.columns]
+
 rebal_df = report[rebal_cols].copy()
 
 if "Weight" in rebal_df.columns:
-    rebal_df["Weight"] = rebal_df["Weight"].apply(
-        lambda x: f"{x:.2%}" if pd.notnull(x) else ""
+    rebal_df["Weight"] = rebal_df["Weight"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
+
+if "TargetWeight" in rebal_df.columns:
+    rebal_df["TargetWeight"] = rebal_df["TargetWeight"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
+
+if "TradeDKK" in rebal_df.columns:
+    rebal_df["TradeDKK"] = rebal_df["TradeDKK"].apply(
+        lambda x: f"+{x:,.0f} kr".replace(",", ".") if x > 0 else f"{x:,.0f} kr".replace(",", ".")
     )
 
-rebal_df = rebal_df.sort_values(
-    "MomentumScore",
-    ascending=False,
-    na_position="last"
-)
+if "MomentumScore" in rebal_df.columns:
+    rebal_df = rebal_df.sort_values("MomentumScore", ascending=False, na_position="last")
 
 st.dataframe(
     rebal_df,
     use_container_width=True,
     hide_index=True,
+)
+
     column_config={
         "ETF_Label": st.column_config.TextColumn("ETF Navn"),
         "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
