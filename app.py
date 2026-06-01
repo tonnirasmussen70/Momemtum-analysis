@@ -127,7 +127,7 @@ col2.metric(
     "Samlet porteføljeværdi",
     f"{total_exposure:,.0f} kr".replace(",", ".")
 )
-col3.metric("Svage signaler", int(weak)
+col3.metric("Svage signaler", int(weak))
 
 st.subheader("Momentum ranking")
 show_cols = [
