@@ -204,6 +204,65 @@ with right:
         fig2.update_xaxes(tickformat=".0%")
         st.plotly_chart(fig2, use_container_width=True)
 
+st.subheader("Handlingsoversigt")
+
+overview = pd.DataFrame()
+
+# Top buys
+buy_df = report.loc[
+    report["Signal"].isin(["Øg"])
+].sort_values(
+    "MomentumScore",
+    ascending=False
+)
+
+# Top reductions
+reduce_df = report.loc[
+    report["Signal"].isin(["Reducer", "Sælg/undgå"])
+].sort_values(
+    "MomentumScore"
+)
+
+# Hard gate
+gate_df = report.loc[
+    (report["Sharpe"] < 1.0)
+    | (report["Sortino"] < 1.5)
+    | (report["MaxDrawdown"] < -0.30)
+]
+
+# Hard read-out
+readout_df = report.loc[
+    (report["MomentumScore"] < 0.5)
+]
+
+overview = pd.DataFrame({
+    "Kategori": [
+        "Top buys",
+        "Top reductions",
+        "Hard gate",
+        "Hard read-out",
+    ],
+    "Resultat": [
+        ", ".join(buy_df["ETF_Label"].head(3))
+        if not buy_df.empty else "Ingen",
+
+        ", ".join(reduce_df["ETF_Label"].head(3))
+        if not reduce_df.empty else "Ingen",
+
+        ", ".join(gate_df["ETF_Label"].head(3))
+        if not gate_df.empty else "Ingen",
+
+        ", ".join(readout_df["ETF_Label"].head(3))
+        if not readout_df.empty else "Ingen",
+    ]
+})
+
+st.dataframe(
+    overview,
+    use_container_width=True,
+    hide_index=True
+)
+
 st.subheader("Rebalanceringsindikation")
 rebal_cols = ["ETF_Label", "Sector", "Weight", "MomentumScore", "Sharpe", "Sortino", "Signal", "StopAction"]
 rebal_cols = [c for c in rebal_cols if c in report.columns]
