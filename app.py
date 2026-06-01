@@ -347,8 +347,6 @@ st.dataframe(
     hide_index=True,
 )
 
-)
-
 csv = report.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Download CSV", csv, file_name="momentum_report.csv", mime="text/csv")
 
