@@ -346,13 +346,7 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
 )
-
-    column_config={
-        "ETF_Label": st.column_config.TextColumn("ETF Navn"),
-        "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
-        "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
-        "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
-    },
+},
 )
 
 csv = report.to_csv(index=False).encode("utf-8-sig")
