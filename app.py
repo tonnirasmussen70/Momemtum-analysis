@@ -120,11 +120,14 @@ total_exposure = report["Exposure"].sum(skipna=True) if "Exposure" in report.col
 valid_score = report["MomentumScore"].dropna() if "MomentumScore" in report.columns else pd.Series(dtype=float)
 weak = (report["Signal"].isin(["Reducer", "Sælg/undgå"])).sum() if "Signal" in report.columns else 0
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
+
 col1.metric("Positioner", len(report))
-col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
-col3.metric("Median momentum score", f"{valid_score.median():.2f}" if not valid_score.empty else "-")
-col4.metric("Svage signaler", int(weak))
+col2.metric(
+    "Samlet porteføljeværdi",
+    f"{total_exposure:,.0f} kr".replace(",", ".")
+)
+col3.metric("Svage signaler", int(weak)
 
 st.subheader("Momentum ranking")
 show_cols = [
