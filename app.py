@@ -123,12 +123,17 @@ total_exposure = report["Exposure"].sum(skipna=True) if "Exposure" in report.col
 valid_score = report["MomentumScore"].dropna() if "MomentumScore" in report.columns else pd.Series(dtype=float)
 weak = (report["Signal"].isin(["Reducer", "Sælg/undgå"])).sum() if "Signal" in report.columns else 0
 
-col1, col2, col3 = st.columns(3)
+portfolio_sharpe = (report["Weight"] * report["Sharpe"]).sum(skipna=True) if {"Weight", "Sharpe"}.issubset(report.columns) else None
+portfolio_sortino = (report["Weight"] * report["Sortino"]).sum(skipna=True) if {"Weight", "Sortino"}.issubset(report.columns) else None
+
+col1, col2, col3, col4, col5 = st.columns(5)
 
 col1.metric("Positioner", len(report))
-col2.metric(
-    "Samlet porteføljeværdi",
-    f"{total_exposure:,.0f} kr".replace(",", ".")
+col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
+col3.metric("Portefølje Sharpe", f"{portfolio_sharpe:.2f}" if portfolio_sharpe is not None else "-")
+col4.metric("Portefølje Sortino", f"{portfolio_sortino:.2f}" if portfolio_sortino is not None else "-")
+col5.metric("Svage signaler", int(weak))
+
 )
 col3.metric("Svage signaler", int(weak))
 
