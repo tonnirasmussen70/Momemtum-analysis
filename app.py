@@ -184,11 +184,26 @@ with left:
     st.subheader("1/3/6/12 mdr afkast")
     value_vars = [c for c in ["1M", "3M", "6M", "12M"] if c in report.columns]
     chart_df = report.melt(id_vars="ETF_Label", value_vars=value_vars, var_name="Periode", value_name="Afkast")
-    fig = px.bar(chart_df, x="ETF_Label", y="Afkast", color="Periode", barmode="group")
-    fig.update_yaxes(tickformat=".0%")
-    fig.update_xaxes(title_text="ETF", tickangle=-35)
-    st.plotly_chart(fig, use_container_width=True)
+    fig = px.bar(
+    returns_long,
+    y="ETF_Label",
+    x="Return",
+    color="Periode",
+    orientation="h",
+    barmode="group",
+    labels={
+        "Return": "Afkast",
+        "ETF_Label": "ETF"
+    }
+)
 
+fig.update_layout(
+    height=700,
+    yaxis=dict(
+        categoryorder="total ascending"
+    ),
+    xaxis_tickformat=".0%"
+)
 with right:
     st.subheader("Risk cloud")
     if {"Volatility", "MomentumScore"}.issubset(report.columns):
