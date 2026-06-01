@@ -93,7 +93,7 @@ st.dataframe(
         "LastPrice": st.column_config.NumberColumn("Dags kurs", format="%.2f"),
     },
 )
-)
+
 st.dataframe(
     portfolio_display,
     use_container_width=True,
