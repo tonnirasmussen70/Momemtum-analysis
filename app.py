@@ -423,5 +423,102 @@ st.caption(
     "Takeaway: Buy strength, trim concentration and do not average down in weak 1M trends. "
     "The portfolio is high-performing but still high-beta thematic exposure."
 )
+st.subheader("Monthly ETF heatmap and risk KPIs")
+
+# ---------- KPI ----------
+kpi = pd.DataFrame()
+
+portfolio_sharpe = (
+    (report["Weight"] * report["Sharpe"]).sum()
+    if {"Weight", "Sharpe"}.issubset(report.columns)
+    else None
+)
+
+portfolio_sortino = (
+    (report["Weight"] * report["Sortino"]).sum()
+    if {"Weight", "Sortino"}.issubset(report.columns)
+    else None
+)
+
+top_weight = report.loc[
+    report["Weight"].idxmax(),
+    "ETF_Label"
+]
+
+top_weight_pct = report["Weight"].max()
+
+negative_1m = report.loc[
+    report["1M"] < 0,
+    "ETF_Label"
+].tolist()
+
+kpi["Metric"] = [
+    "Portfolio Sharpe",
+    "Portfolio Sortino",
+    "1M momentum",
+    "12M est. portfolio return",
+    "Max single ETF weight",
+    "Negative 1M names",
+]
+
+kpi["Value"] = [
+    f"{portfolio_sharpe:.2f}",
+    f"{portfolio_sortino:.2f}",
+    f"{report['1M'].mean():.1%}",
+    f"{report['12M'].mean():.1%}",
+    f"{top_weight} ({top_weight_pct:.1%})",
+    ", ".join(negative_1m[:5]),
+]
+
+kpi["Read-out"] = [
+    "🟢 Strong" if portfolio_sharpe > 2 else "🟡 Moderate",
+    "🟢 Strong" if portfolio_sortino > 3 else "🟡 Moderate",
+    "🟢 Positive" if report["1M"].mean() > 0 else "🔴 Weak",
+    "🟢 Strong trend" if report["12M"].mean() > 0.5 else "🟡 Neutral",
+    "🟡 Watch concentration" if top_weight_pct > 0.20 else "🟢 Balanced",
+    "🔴 Review negative positions" if len(negative_1m) else "🟢 None",
+]
+
+st.dataframe(
+    kpi,
+    use_container_width=True,
+    hide_index=True,
+)
+
+# ---------- HEATMAP ----------
+
+heat_cols = ["1M", "3M", "6M", "12M"]
+
+heat = (
+    report[
+        ["ETF_Label"] + heat_cols
+    ]
+    .set_index("ETF_Label")
+)
+
+fig = px.imshow(
+    heat,
+    text_auto=".0%",
+    color_continuous_scale=[
+        [0.0, "#d73027"],   # rød
+        [0.5, "#fee08b"],   # gul
+        [1.0, "#1a9850"],   # grøn
+    ],
+    aspect="auto",
+)
+
+fig.update_layout(
+    height=700,
+    coloraxis_colorbar_title="Afkast %",
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
+st.caption(
+    "Hard truth: Høj Sharpe/Sortino er positivt, men beskytter ikke mod koncentration og drawdown."
+)
 
 st.info("Næste udviklingstrin: TradingView webhook-modul, signal-log og automatisk ugentlig rapport.")
