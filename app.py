@@ -219,7 +219,7 @@ st.plotly_chart(
     fig,
     use_container_width=True
 )
-)
+
 with right:
     st.subheader("Risk cloud")
     if {"Volatility", "MomentumScore"}.issubset(report.columns):
