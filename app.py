@@ -89,17 +89,6 @@ st.dataframe(
     hide_index=True,
     column_config={
         "Quantity": st.column_config.NumberColumn("Antal", format="%.0f"),
-        "InputPrice": st.column_config.NumberColumn("Købskurs", format="%.2f"),
-        "LastPrice": st.column_config.NumberColumn("Dags kurs", format="%.2f"),
-    },
-)
-
-st.dataframe(
-    portfolio_display,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "Quantity": st.column_config.NumberColumn("Antal", format="%.0f"),
         "InputPrice": st.column_config.NumberColumn("Kurs", format="%.2f"),
         "LastPrice": st.column_config.NumberColumn("Dags kurs", format="%.2f"),
     },
