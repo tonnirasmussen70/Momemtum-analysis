@@ -171,16 +171,6 @@ st.dataframe(
         "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
     },
 )
-st.dataframe(
-    styled,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
-        "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
-        "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
-    },
-)
    
 left, right = st.columns(2)
 with left:
