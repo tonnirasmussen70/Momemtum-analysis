@@ -181,35 +181,44 @@ st.dataframe(
    
 left, right = st.columns(2)
 with left:
-    st.subheader("1/3/6/12 mdr afkast")
-    value_vars = [c for c in ["1M", "3M", "6M", "12M"] if c in report.columns]
-    chart_df = report.melt(id_vars="ETF_Label", value_vars=value_vars, var_name="Periode", value_name="Afkast")
-    fig = px.bar(
-    returns_long = report.melt(,
-    id_vars=["ETF_Label"],
-    value_vars=["1M", "3M", "6M", "12M"],
-    var_name="Periode",
-    value_name="Return"
+   st.subheader("1/3/6/12 mdr afkast")
+
+returns_long = (
+    report[
+        ["ETF_Label", "1M", "3M", "6M", "12M"]
+    ]
+    .melt(
+        id_vars="ETF_Label",
+        var_name="Periode",
+        value_name="Return"
+    )
+    .dropna()
 )
 
-returns_long = returns_long.dropna()
+fig = px.bar(
+    returns_long,
     y="ETF_Label",
     x="Return",
     color="Periode",
     orientation="h",
     barmode="group",
-    labels={
-        "Return": "Afkast",
-        "ETF_Label": "ETF"
-    }
 )
 
 fig.update_layout(
     height=700,
     yaxis=dict(
         categoryorder="total ascending"
-    ),
-    xaxis_tickformat=".0%"
+    )
+)
+
+fig.update_xaxes(
+    tickformat=".0%"
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
 )
 with right:
     st.subheader("Risk cloud")
