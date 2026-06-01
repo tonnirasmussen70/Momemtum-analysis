@@ -185,7 +185,7 @@ with left:
     value_vars = [c for c in ["1M", "3M", "6M", "12M"] if c in report.columns]
     chart_df = report.melt(id_vars="ETF_Label", value_vars=value_vars, var_name="Periode", value_name="Afkast")
     fig = px.bar(
-    returns_long = report.melt(
+    returns_long = report.melt(,
     id_vars=["ETF_Label"],
     value_vars=["1M", "3M", "6M", "12M"],
     var_name="Periode",
