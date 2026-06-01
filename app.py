@@ -68,7 +68,7 @@ if portfolio.empty:
 
 st.subheader("Porteføljeinput")
 
-input_cols = ["ETF_Navn", "Quantity", "Exposure", "InputPrice", "Weight", "Sector"]
+input_cols = ["ETF_Navn", "Quantity", "Exposure", "InputPrice", "Last price", "Weight", "Sector"]
 input_cols = [c for c in input_cols if c in portfolio.columns]
 portfolio_display = portfolio[input_cols].copy()
 
@@ -88,6 +88,7 @@ st.dataframe(
     column_config={
         "Quantity": st.column_config.NumberColumn("Antal", format="%.0f"),
         "InputPrice": st.column_config.NumberColumn("Kurs", format="%.2f"),
+        "LastPrice": st.column_config.NumberColumn("Dags kurs", format="%.2f"),
     },
 )
 
