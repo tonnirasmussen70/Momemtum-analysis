@@ -353,4 +353,75 @@ st.download_button("Download CSV", csv, file_name="momentum_report.csv", mime="t
 pdf_bytes = create_pdf(report.sort_values("MomentumScore", ascending=False, na_position="last"))
 st.download_button("Download PDF", pdf_bytes, file_name="momentum_report.pdf", mime="application/pdf")
 
+st.subheader("Rotation signals and monthly rules")
+
+rotation_signals = pd.DataFrame({
+    "Theme": [
+        "Korea",
+        "SECO / Semiconductors",
+        "Rare Earth / VWMX",
+        "Uranium",
+        "Defence",
+        "Space",
+        "Clean Energy",
+        "Quantum",
+    ],
+    "Current signal": [
+        "Confirmed momentum; strong 1/3/6/12M",
+        "Confirmed momentum; now below 25% cap",
+        "1M negative despite strong 6/12M",
+        "1M and 3M negative",
+        "1M and 3M negative",
+        "Confirmed momentum but already overweight vs target",
+        "Positive but moderate momentum",
+        "Confirmed momentum and underweight",
+    ],
+    "Action": [
+        "Add modestly; cap because it overlaps with semis/electronics cycle.",
+        "Eligible for add back toward 25%, but avoid excessive concentration.",
+        "Reduce to target; no add until 1M > 0.",
+        "Hold/reduce only; no averaging down.",
+        "Reduce/hold only; no buy now.",
+        "Trim excess; keep core exposure.",
+        "Small add allowed.",
+        "Top buy, but keep as satellite due high volatility.",
+    ],
+})
+
+st.dataframe(
+    rotation_signals,
+    use_container_width=True,
+    hide_index=True,
+)
+
+monthly_rules = pd.DataFrame({
+    "Rule": [
+        "Momentum score",
+        "Momentum gate",
+        "Positive reversal",
+        "Momentum weakening",
+        "Confirmed momentum",
+        "Risk KPI",
+    ],
+    "Implementation": [
+        "1M 15% + 3M 25% + 6M 30% + 12M 30%",
+        "Do not add to ETFs with 1M < 0 unless clear positive reversal exists.",
+        "1M > 0 and 1M > average(3M, 6M).",
+        "1M < 0 while 6M/12M remain positive - protect gains, no averaging down.",
+        "1/3/6/12M all positive - eligible for buy/overweight, subject to caps.",
+        "Track portfolio Sharpe and Sortino weekly; deterioration confirms rising drawdown risk or poor rebalancing value.",
+    ],
+})
+
+st.dataframe(
+    monthly_rules,
+    use_container_width=True,
+    hide_index=True,
+)
+
+st.caption(
+    "Takeaway: Buy strength, trim concentration and do not average down in weak 1M trends. "
+    "The portfolio is high-performing but still high-beta thematic exposure."
+)
+
 st.info("Næste udviklingstrin: TradingView webhook-modul, signal-log og automatisk ugentlig rapport.")
