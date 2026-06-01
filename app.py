@@ -68,18 +68,31 @@ if portfolio.empty:
 
 st.subheader("Porteføljeinput")
 
-input_cols = ["ETF_Navn", "Quantity", "Exposure", "InputPrice", "Last price", "Weight", "Sector"]
+input_cols = ["ETF_Navn", "Quantity", "InputPrice", "LastPrice", "Exposure", "Weight", "Sector"]
 input_cols = [c for c in input_cols if c in portfolio.columns]
-portfolio_display = portfolio[input_cols].copy()
 
 portfolio_display = portfolio[input_cols].copy()
 
-portfolio_display["Exposure"] = portfolio_display["Exposure"].apply(
-    lambda x: f"{x:,.0f} kr".replace(",", ".")
+if "Exposure" in portfolio_display.columns:
+    portfolio_display["Exposure"] = portfolio_display["Exposure"].apply(
+        lambda x: f"{x:,.0f} kr".replace(",", ".") if pd.notnull(x) else ""
+    )
+
+if "Weight" in portfolio_display.columns:
+    portfolio_display["Weight"] = portfolio_display["Weight"].apply(
+        lambda x: f"{x:.2%}" if pd.notnull(x) else ""
+    )
+
+st.dataframe(
+    portfolio_display,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Quantity": st.column_config.NumberColumn("Antal", format="%.0f"),
+        "InputPrice": st.column_config.NumberColumn("Købskurs", format="%.2f"),
+        "LastPrice": st.column_config.NumberColumn("Dags kurs", format="%.2f"),
+    },
 )
-
-portfolio_display["Weight"] = portfolio_display["Weight"].apply(
-    lambda x: f"{x:.2%}"
 )
 st.dataframe(
     portfolio_display,
