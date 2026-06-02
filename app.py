@@ -353,11 +353,6 @@ possible_momentum_cols = [
     "Score"
 ]
 
-for col_name in possible_momentum_cols:
-    if col_name in df.columns:
-        momentum_col = col_name
-        break
-
 if momentum_col is not None:
     df["Anbefalet vægt"] = df[momentum_col].apply(calc_target_weight)
 else:
