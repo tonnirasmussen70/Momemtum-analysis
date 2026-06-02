@@ -103,15 +103,37 @@ st.dataframe(
 
 # Kursdata hentes ud fra Ticker-kolonnen. Hvis Ticker mangler, falder appen tilbage til ISIN,
 # men det kræver at market_data.py kan mappe ISIN til et gyldigt kurs-symbol.
-tickers = sorted(portfolio["Ticker"].dropna().astype(str).unique().tolist())
+def is_isin(value):
+    value = str(value).strip().upper()
+    return len(value) == 12 and value[:2].isalpha() and value[-1].isdigit()
 
+tickers = (
+    portfolio["Ticker"]
+    .dropna()
+    .astype(str)
+    .str.strip()
+    .unique()
+    .tolist()
+)
+
+tickers = [
+    t for t in tickers
+    if t
+    and t.lower() != "nan"
+    and not is_isin(t)
+]
 
 @st.cache_data(show_spinner=True)
 def get_prices(tickers, period):
     return fetch_prices(tickers, period=period)
 
-prices = get_prices(tickers, period)
-
+try:
+    prices = get_prices(tickers, period)
+except Exception as exc:
+    st.warning("Yahoo/yfinance kunne ikke hente kursdata lige nu. Rapporten vises uden opdateret momentum.")
+    st.exception(exc)
+    prices = pd.DataFrame()
+    
 if prices.empty:
     st.error("Jeg kunne ikke hente kursdata. Tjek tickerkoder eller ISIN-mapping til kursdata.")
     st.stop()
