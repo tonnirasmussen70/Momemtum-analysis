@@ -406,25 +406,45 @@ if {"Sector", "MomentumScore"}.issubset(report.columns):
 else:
     rebal_df["TargetSectorWeight"] = rebal_df["Weight"]
 
-for col in [
-    "Weight",
-    "TargetWeight",
-    "TargetSectorWeight",
-    "MomentumScore",
-    "Sharpe",
-    "Sortino",
-]:
-
-if "TradeDKK" in rebal_df.columns:
-    rebal_df["TradeDKK"] = (
-        rebal_df["TradeDKK"]
-        .round(0)
-    )
 # ---------------------------------------------------
-# Formatering af rebalanceringsvisning
+# Formater rebalanceringsoversigt
 # ---------------------------------------------------
 
 rebal_display = rebal_df.copy()
+
+# Vægte som %
+for col in ["Weight", "TargetWeight", "TargetSectorWeight"]:
+    if col in rebal_display.columns:
+        rebal_display[col] = (
+            rebal_display[col]
+            .apply(lambda x: f"{x:.1%}" if pd.notnull(x) else "")
+        )
+
+# Scores med 1 decimal
+for col in ["MomentumScore", "Sharpe", "Sortino"]:
+    if col in rebal_display.columns:
+        rebal_display[col] = (
+            rebal_display[col]
+            .apply(lambda x: f"{x:.1f}" if pd.notnull(x) else "")
+        )
+
+# DKK med separator
+if "TradeDKK" in rebal_display.columns:
+    rebal_display["TradeDKK"] = (
+        rebal_display["TradeDKK"]
+        .apply(
+            lambda x:
+            f"{x:,.0f} kr".replace(",", ".")
+            if pd.notnull(x)
+            else ""
+        )
+    )
+
+st.dataframe(
+    rebal_display,
+    use_container_width=True,
+    hide_index=True,
+)
 
 # Procentkolonner
 for col in ["Weight", "TargetWeight", "TargetSectorWeight"]:
