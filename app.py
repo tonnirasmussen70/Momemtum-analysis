@@ -447,7 +447,6 @@ for col in score_cols:
 if "TradeDKK" in rebal_display.columns:
     trade_numeric = pd.to_numeric(rebal_display["TradeDKK"], errors="coerce")
     rebal_display["TradeDKK"] = trade_numeric.apply(
-        lambda x: f"{x:,.0f} kr".replace(",", ".") if pd.notnull(x) else ""
     )
 
 st.dataframe(
