@@ -322,6 +322,14 @@ rebal_cols = [
     "Sortino",
     "Signal",
 ]
+SECTOR_MAX = 0.20
+SECTOR_MIN = 0.05
+
+target = min(target, SECTOR_MAX)
+target = max(target, SECTOR_MIN)
+
+if sector_momentum < 0:
+    target = 0
 
 rebal_cols = [c for c in rebal_cols if c in report.columns]
 
