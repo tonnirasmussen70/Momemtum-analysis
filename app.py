@@ -12,6 +12,13 @@ from modules.reporting import create_pdf
 
 st.set_page_config(page_title="Momentum Dashboard", layout="wide")
 
+# ---------------------------------------------------
+# Rebalanceringsparametre
+# ---------------------------------------------------
+SECTOR_MAX = 0.20   # 20% max vægt pr. sektor
+SECTOR_MIN = 0.03   # 3% minimum hvis sektoren stadig er aktiv
+POSITION_MAX = 0.20 # 20% max vægt pr. enkeltposition
+
 st.title("Momentum Dashboard")
 st.caption("Browserbaseret ETF/aktie-dashboard med momentum, Sharpe, Sortino, drawdown og stop-loss forslag")
 
