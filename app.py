@@ -529,7 +529,7 @@ st.dataframe(
             ),
     }
 )
-)
+
 
 st.caption(
     "Takeaway: Buy strength, trim concentration and do not average down in weak 1M trends. "
