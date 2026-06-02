@@ -124,16 +124,16 @@ tickers = [
 ]
 
 @st.cache_data(show_spinner=True)
+
 def get_prices(tickers, period):
     return fetch_prices(tickers, period=period)
 
-try:
-    prices = get_prices(tickers, period)
-    
-st.write("Tickers:", tickers)
+prices = get_prices(tickers, period)
+
+st.info(f"Tickers fundet: {tickers}")
 
 if not prices.empty:
-    st.write("Pris kolonner:", list(prices.columns))
+    st.info(f"Kursdata hentet: {list(prices.columns)}")
     
 if prices.empty:
     st.error("Jeg kunne ikke hente kursdata. Tjek tickerkoder eller ISIN-mapping til kursdata.")
