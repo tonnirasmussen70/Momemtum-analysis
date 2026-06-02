@@ -351,7 +351,7 @@ if "Momentum Score" in df.columns:
             target = SECTOR_MIN
 
 # Begræns target mellem min og max
-target = max(SECTOR_MIN, min(float(target), SECTOR_MAX))
+target = max(SECTOR_MIN, min(float(target), SECTOR_MAX)
     )
 
 if "MomentumScore" in rebal_df.columns:
