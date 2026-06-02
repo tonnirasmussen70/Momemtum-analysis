@@ -363,10 +363,7 @@ if momentum_col is not None:
 else:
     st.warning("Ingen momentum-kolonne fundet. Anbefalet vægt sættes til minimum.")
     df["Anbefalet vægt"] = SECTOR_MIN
-    if col in df.columns:
-        momentum_col = col
-        break
-
+    
 if momentum_col is not None:
     df["Anbefalet vægt"] = df[momentum_col].apply(calc_target_weight)
 else:
