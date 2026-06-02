@@ -337,9 +337,13 @@ SECTOR_MIN = 0.05
 target = SECTOR_MIN
 
 # Hvis der findes en momentum-score, beregn target ud fra den
+# ---------------------------------------------------
+# Find momentum-kolonne og beregn anbefalet vægt
+# ---------------------------------------------------
+
 momentum_col = None
 
-for col in [
+possible_momentum_cols = [
     "Momentum Score",
     "Momentum",
     "Risk adjusted momentum",
@@ -347,7 +351,18 @@ for col in [
     "Risk Adjusted Momentum",
     "MOM Score",
     "Score"
-]:
+]
+
+for col_name in possible_momentum_cols:
+    if col_name in df.columns:
+        momentum_col = col_name
+        break
+
+if momentum_col is not None:
+    df["Anbefalet vægt"] = df[momentum_col].apply(calc_target_weight)
+else:
+    st.warning("Ingen momentum-kolonne fundet. Anbefalet vægt sættes til minimum.")
+    df["Anbefalet vægt"] = SECTOR_MIN
     if col in df.columns:
         momentum_col = col
         break
