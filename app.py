@@ -325,23 +325,46 @@ st.dataframe(
 )
 st.subheader("Rebalanceringsindikation")
 
+st.subheader("Rebalanceringsindikation")
+
 portfolio_value = report["Exposure"].sum(skipna=True)
 
-buy_mask = report["Signal"] == "Øg" if "Signal" in report.columns else False
-hold_mask = report["Signal"] == "Hold" if "Signal" in report.columns else False
-reduce_mask = report["Signal"].isin(["Afvent", "Reducer", "Sælg/undgå"]) if "Signal" in report.columns else False
-
-# ---------------------------------------------------
-# Basis rebalancering efter signal
-# ---------------------------------------------------
+# Start med aktuel vægt
 report["TargetWeight"] = report["Weight"].fillna(0)
 
-if "Signal" in report.columns:
-    report.loc[buy_mask, "TargetWeight"] *= 1.20
-    report.loc[hold_mask, "TargetWeight"] *= 1.00
-    report.loc[reduce_mask, "TargetWeight"] *= 0.80
+# Momentum-logik:
+# Stærke positioner må gerne holdes tæt på nuværende vægt
+# Reducér kun vindere hvis de er over POSITION_MAX
+for idx, row in report.iterrows():
+    weight = row.get("Weight", 0)
+    signal = row.get("Signal", "")
+    m1 = row.get("1M", None)
+    m3 = row.get("3M", None)
 
+    if signal == "Øg":
+        # Stærk trend: behold/øg, men max 20%
+        target = min(max(weight, weight * 1.05), POSITION_MAX)
+
+    elif signal == "Hold":
+        # Hold tæt på nuværende vægt
+        target = weight
+
+    elif signal in ["Afvent", "Reducer", "Sælg/undgå"]:
+        # Svagere signal: reducer moderat
+        target = weight * 0.80
+
+    else:
+        target = weight
+
+    # Ekstra gate: hvis 1M og 3M begge er negative, reducer hårdere
+    if pd.notnull(m1) and pd.notnull(m3) and m1 < 0 and m3 < 0:
+        target = weight * 0.65
+
+    report.at[idx, "TargetWeight"] = target
+
+# Normaliser så samlet target = 100%
 target_sum = report["TargetWeight"].sum(skipna=True)
+
 if target_sum and target_sum > 0:
     report["TargetWeight"] = report["TargetWeight"] / target_sum
 else:
@@ -350,9 +373,22 @@ else:
 report["TargetExposure"] = report["TargetWeight"] * portfolio_value
 report["TradeDKK"] = report["TargetExposure"] - report["Exposure"]
 
-# ---------------------------------------------------
-# Momentum-baseret sektor rebalancering
-# ---------------------------------------------------
+def trade_action(row):
+    trade = row.get("TradeDKK", 0)
+
+    if pd.isna(trade):
+        return "Afvent"
+
+    if trade > 500:
+        return "Køb / Øg"
+
+    if trade < -500:
+        return "Reducer"
+
+    return "Hold"
+
+report["Handling"] = report.apply(trade_action, axis=1)
+
 rebal_cols = [
     "ETF_Label",
     "Sector",
@@ -362,122 +398,33 @@ rebal_cols = [
     "Sharpe",
     "Sortino",
     "Signal",
+    "Handling",
 ]
+
 rebal_cols = [c for c in rebal_cols if c in report.columns]
-rebal_df = report[rebal_cols].copy()
 
-if {"Sector", "MomentumScore", "Weight"}.issubset(report.columns):
-    sector = (
-        report
-        .groupby("Sector", dropna=False)
-        .agg(
-            CurrentSectorWeight=("Weight", "sum"),
-            SectorMomentum=("MomentumScore", "mean"),
-        )
-        .reset_index()
+rebal_display = report[rebal_cols].copy()
+
+if "Weight" in rebal_display.columns:
+    rebal_display["Weight"] = rebal_display["Weight"].apply(
+        lambda x: f"{x:.1%}" if pd.notnull(x) else ""
     )
 
-    def calc_sector_weight(score):
-        if pd.isna(score):
-            return SECTOR_MIN
-        if score >= 0.80:
-            return SECTOR_MAX
-        elif score >= 0.60:
-            return 0.15
-        elif score >= 0.40:
-            return 0.10
-        elif score > 0:
-            return SECTOR_MIN
-        else:
-            return 0.00
-
-    sector["TargetSectorWeight"] = sector["SectorMomentum"].apply(calc_sector_weight)
-
-    sector_total = sector["TargetSectorWeight"].sum(skipna=True)
-    if sector_total and sector_total > 0:
-        sector["TargetSectorWeight"] = sector["TargetSectorWeight"] / sector_total
-    else:
-        sector["TargetSectorWeight"] = sector["CurrentSectorWeight"]
-
-    rebal_df = rebal_df.merge(
-        sector[["Sector", "TargetSectorWeight"]],
-        on="Sector",
-        how="left",
+if "TargetWeight" in rebal_display.columns:
+    rebal_display["TargetWeight"] = rebal_display["TargetWeight"].apply(
+        lambda x: f"{x:.1%}" if pd.notnull(x) else ""
     )
-
-    sector_weight_sum = rebal_df.groupby("Sector")["Weight"].transform("sum")
-    intra_sector_weight = rebal_df["Weight"] / sector_weight_sum.replace(0, pd.NA)
-
-    rebal_df["TargetWeight"] = rebal_df["TargetSectorWeight"] * intra_sector_weight
-    rebal_df["TargetWeight"] = rebal_df["TargetWeight"].fillna(rebal_df["Weight"])
-    rebal_df["TargetExposure"] = rebal_df["TargetWeight"] * portfolio_value
-    rebal_df["TradeDKK"] = rebal_df["TargetExposure"] - report.loc[rebal_df.index, "Exposure"].values
-else:
-    rebal_df["TargetSectorWeight"] = rebal_df.get("TargetWeight", rebal_df.get("Weight", 0))
-
-if "MomentumScore" in rebal_df.columns:
-    rebal_df = rebal_df.sort_values("MomentumScore", ascending=False, na_position="last")
-
-# ---------------------------------------------------
-# Visningsformat - ændrer ikke datagrundlaget
-# ---------------------------------------------------
-rebal_display = rebal_df.copy()
-
-# Kun vægte skal vises som %
-percent_cols = [
-    "Weight",
-    "TargetWeight",
-    "TargetSectorWeight",
-]
-
-for col in percent_cols:
-    if col in rebal_display.columns:
-        numeric_col = pd.to_numeric(
-            rebal_display[col],
-            errors="coerce"
-        )
-
-        rebal_display[col] = numeric_col.apply(
-            lambda x:
-            f"{x:.1%}"
-            if pd.notnull(x)
-            else ""
-        )
-
-# Momentum / Sharpe / Sortino = almindelige tal
-score_cols = [
-    "MomentumScore",
-    "Sharpe",
-    "Sortino",
-]
-
-for col in score_cols:
-    if col in rebal_display.columns:
-
-        numeric_col = pd.to_numeric(
-            rebal_display[col],
-            errors="coerce"
-        )
-
-        rebal_display[col] = numeric_col.apply(
-            lambda x:
-            f"{x:.1f}"
-            if pd.notnull(x)
-            else ""
-    
-        )
 
 if "TradeDKK" in rebal_display.columns:
-    trade_numeric = pd.to_numeric(
-        rebal_display["TradeDKK"],
-        errors="coerce"
+    rebal_display["TradeDKK"] = rebal_display["TradeDKK"].apply(
+        lambda x: f"{x:,.0f}".replace(",", ".") if pd.notnull(x) else ""
     )
 
-    rebal_display["TradeDKK"] = trade_numeric.map(
-        lambda x: f"{x:,.0f}".replace(",", ".")
-        if pd.notnull(x)
-        else ""
-    )
+for col in ["Sharpe", "Sortino"]:
+    if col in rebal_display.columns:
+        rebal_display[col] = rebal_display[col].apply(
+            lambda x: f"{x:.1f}" if pd.notnull(x) else ""
+        )
 
 st.dataframe(
     rebal_display,
