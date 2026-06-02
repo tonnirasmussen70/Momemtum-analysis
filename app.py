@@ -336,7 +336,6 @@ rebal_cols = [
     "Weight",
     "TargetWeight",
     "TradeDKK",
-    "MomentumScore",
     "Sharpe",
     "Sortino",
     "Signal",
@@ -401,20 +400,48 @@ if "MomentumScore" in rebal_df.columns:
 # ---------------------------------------------------
 rebal_display = rebal_df.copy()
 
+# Kun vægte skal vises som %
 percent_cols = [
     "Weight",
     "TargetWeight",
     "TargetSectorWeight",
+]
+
+for col in percent_cols:
+    if col in rebal_display.columns:
+        numeric_col = pd.to_numeric(
+            rebal_display[col],
+            errors="coerce"
+        )
+
+        rebal_display[col] = numeric_col.apply(
+            lambda x:
+            f"{x:.1%}"
+            if pd.notnull(x)
+            else ""
+        )
+
+# Momentum / Sharpe / Sortino = almindelige tal
+score_cols = [
     "MomentumScore",
     "Sharpe",
     "Sortino",
 ]
 
-for col in percent_cols:
+for col in score_cols:
     if col in rebal_display.columns:
-        numeric_col = pd.to_numeric(rebal_display[col], errors="coerce")
+
+        numeric_col = pd.to_numeric(
+            rebal_display[col],
+            errors="coerce"
+        )
+
         rebal_display[col] = numeric_col.apply(
-            lambda x: f"{x:.1%}" if pd.notnull(x) else ""
+            lambda x:
+            f"{x:.1f}"
+            if pd.notnull(x)
+            else ""
+    
         )
 
 if "TradeDKK" in rebal_display.columns:
