@@ -420,29 +420,39 @@ if "TradeDKK" in rebal_df.columns:
         rebal_df["TradeDKK"]
         .round(0)
     )
+# ---------------------------------------------------
+# Formatering af rebalanceringsvisning
+# ---------------------------------------------------
+
 rebal_display = rebal_df.copy()
 
+# Procentkolonner
 for col in ["Weight", "TargetWeight", "TargetSectorWeight"]:
     if col in rebal_display.columns:
         rebal_display[col] = rebal_display[col].apply(
-            lambda x: f"{x:.1f}%" if pd.notnull(x) else ""
+            lambda x: f"{x:.1%}" if pd.notnull(x) else ""
         )
 
+# Scorekolonner
 for col in ["MomentumScore", "Sharpe", "Sortino"]:
     if col in rebal_display.columns:
         rebal_display[col] = rebal_display[col].apply(
             lambda x: f"{x:.1f}" if pd.notnull(x) else ""
         )
 
+# DKK-format
 if "TradeDKK" in rebal_display.columns:
     rebal_display["TradeDKK"] = rebal_display["TradeDKK"].apply(
-        lambda x: f"{x:,.0f} kr".replace(",", ".") if pd.notnull(x) else ""
+        lambda x: f"{x:,.0f} kr".replace(",", ".")
+        if pd.notnull(x)
+        else ""
     )
 
 st.dataframe(
     rebal_display,
     use_container_width=True,
     hide_index=True,
+)r
 )
 
 st.dataframe(
