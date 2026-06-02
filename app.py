@@ -481,9 +481,54 @@ monthly_rules = pd.DataFrame({
 })
 
 st.dataframe(
-    monthly_rules,
+    rebal_df,
     use_container_width=True,
     hide_index=True,
+    column_config={
+
+        "Weight":
+            st.column_config.NumberColumn(
+                "Weight",
+                format="%.1f%%"
+            ),
+
+        "TargetWeight":
+            st.column_config.NumberColumn(
+                "TargetWeight",
+                format="%.1f%%"
+            ),
+
+        "TargetSectorWeight":
+            st.column_config.NumberColumn(
+                "TargetSectorWeight",
+                format="%.1f%%"
+            ),
+
+        "MomentumScore":
+            st.column_config.NumberColumn(
+                "Momentum",
+                format="%.1f%%"
+            ),
+
+        "Sharpe":
+            st.column_config.NumberColumn(
+                "Sharpe",
+                format="%.1f%%"
+            ),
+
+        "Sortino":
+            st.column_config.NumberColumn(
+                "Sortino",
+                format="%.1f%%"
+            ),
+
+        "TradeDKK":
+            st.column_config.NumberColumn(
+                "Trade DKK",
+                format="%d kr"
+            ),
+    }
+)
 )
 
 st.caption(
