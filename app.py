@@ -332,11 +332,11 @@ rebal_cols = [
 SECTOR_MAX = 0.20
 SECTOR_MIN = 0.05
 
-target = min(target, SECTOR_MAX)
-target = max(target, SECTOR_MIN)
-
-if sector_momentum < 0:
-    target = 0
+# Begræns sektorvægt
+if pd.notna(target):
+    target = max(SECTOR_MIN, min(float(target), SECTOR_MAX))
+else:
+    target = SECTOR_MIN
 
 rebal_cols = [c for c in rebal_cols if c in report.columns]
 
