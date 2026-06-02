@@ -318,59 +318,82 @@ report["TargetWeight"] = report["TargetWeight"] / report["TargetWeight"].sum()
 report["TargetExposure"] = report["TargetWeight"] * portfolio_value
 report["TradeDKK"] = report["TargetExposure"] - report["Exposure"]
 
-rebal_cols = [
-    "ETF_Label",
-    "Sector",
-    "Weight",
-    "TargetWeight",
-    "TradeDKK",
-    "MomentumScore",
-    "Sharpe",
-    "Sortino",
-    "Signal",
-]
-SECTOR_MAX = 0.20
-SECTOR_MIN = 0.05
-
-# Begræns sektorvægt
-# Sikker default målvægt
-target = SECTOR_MIN
-
-# Hvis der findes en momentum-score, beregn target ud fra den
 # ---------------------------------------------------
-# Find momentum-kolonne og beregn anbefalet vægt
+# Momentum-baseret sektor rebalancering
 # ---------------------------------------------------
 
-momentum_col = None
+rebal_df = report[rebal_cols].copy()
 
-possible_momentum_cols = [
-    "Momentum Score",
-    "Momentum",
-    "Risk adjusted momentum",
-    "Risk-adjusted Momentum",
-    "Risk Adjusted Momentum",
-    "MOM Score",
-    "Score"
-]
+if {"Sector", "MomentumScore"}.issubset(report.columns):
 
-if momentum_col is not None:
-    df["Anbefalet vægt"] = df[momentum_col].apply(calc_target_weight)
-else:
-    st.warning("Ingen momentum-kolonne fundet. Anbefalet vægt sættes til minimum.")
-    df["Anbefalet vægt"] = SECTOR_MIN
-    
-if momentum_col is not None:
-    df["Anbefalet vægt"] = df[momentum_col].apply(calc_target_weight)
-else:
-    st.warning("Ingen momentum-kolonne fundet. Anbefalet vægt sættes til minimum.")
-    df["Anbefalet vægt"] = SECTOR_MIN
-
-# Begræns target mellem min og max
-target = max(SECTOR_MIN, min(float(target), SECTOR_MAX)
+    sector = (
+        report
+        .groupby("Sector", dropna=False)
+        .agg(
+            CurrentWeight=("Weight", "sum"),
+            Momentum=("MomentumScore", "mean")
+        )
+        .reset_index()
     )
 
-if "MomentumScore" in rebal_df.columns:
-    rebal_df = rebal_df.sort_values("MomentumScore", ascending=False, na_position="last")
+    def calc_sector_weight(score):
+
+        if pd.isna(score):
+            return 0.05
+
+        if score >= 8:
+            return 0.20
+        elif score >= 6:
+            return 0.15
+        elif score >= 4:
+            return 0.10
+        elif score > 0:
+            return 0.05
+        else:
+            return 0.00
+
+    sector["TargetSectorWeight"] = (
+        sector["Momentum"]
+        .apply(calc_sector_weight)
+    )
+
+    sector["TargetSectorWeight"] = (
+        sector["TargetSectorWeight"]
+        /
+        sector["TargetSectorWeight"].sum()
+    )
+
+    rebal_df = rebal_df.merge(
+        sector[
+            ["Sector", "TargetSectorWeight"]
+        ],
+        on="Sector",
+        how="left"
+    )
+
+    rebal_df["TargetWeight"] = (
+        rebal_df["TargetSectorWeight"]
+        *
+        (
+            rebal_df["Weight"]
+            /
+            rebal_df.groupby("Sector")["Weight"]
+            .transform("sum")
+        )
+    )
+
+    rebal_df["TradeDKK"] = (
+        rebal_df["TargetWeight"]
+        *
+        portfolio_value
+        -
+        report["Exposure"]
+    )
+
+else:
+    rebal_df["TargetSectorWeight"] = rebal_df["Weight"]
+
+
 
 st.dataframe(
     rebal_df,
