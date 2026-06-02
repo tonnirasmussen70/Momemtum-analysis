@@ -322,8 +322,21 @@ report["TradeDKK"] = report["TargetExposure"] - report["Exposure"]
 # Momentum-baseret sektor rebalancering
 # ---------------------------------------------------
 
-rebal_df = report[rebal_cols].copy()
+rebal_cols = [
+    "ETF_Label",
+    "Sector",
+    "Weight",
+    "TargetWeight",
+    "TradeDKK",
+    "MomentumScore",
+    "Sharpe",
+    "Sortino",
+    "Signal",
+]
 
+rebal_cols = [c for c in rebal_cols if c in report.columns]
+
+rebal_df = report[rebal_cols].copy()
 if {"Sector", "MomentumScore"}.issubset(report.columns):
 
     sector = (
