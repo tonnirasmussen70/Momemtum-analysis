@@ -333,24 +333,25 @@ SECTOR_MAX = 0.20
 SECTOR_MIN = 0.05
 
 # Begræns sektorvægt
-if pd.notna(target):
-    target = max(SECTOR_MIN, min(float(target), SECTOR_MAX))
-else:
-    target = SECTOR_MIN
+# Sikker default målvægt
+target = SECTOR_MIN
 
-rebal_cols = [c for c in rebal_cols if c in report.columns]
+# Hvis der findes en momentum-score, beregn target ud fra den
+if "Momentum Score" in df.columns:
+    momentum_score = df["Momentum Score"].mean()
 
-rebal_df = report[rebal_cols].copy()
+    if pd.notna(momentum_score):
+        if momentum_score >= 8:
+            target = SECTOR_MAX
+        elif momentum_score >= 6:
+            target = 0.15
+        elif momentum_score >= 4:
+            target = 0.10
+        else:
+            target = SECTOR_MIN
 
-if "Weight" in rebal_df.columns:
-    rebal_df["Weight"] = rebal_df["Weight"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
-
-if "TargetWeight" in rebal_df.columns:
-    rebal_df["TargetWeight"] = rebal_df["TargetWeight"].apply(lambda x: f"{x:.2%}" if pd.notnull(x) else "")
-
-if "TradeDKK" in rebal_df.columns:
-    rebal_df["TradeDKK"] = rebal_df["TradeDKK"].apply(
-        lambda x: f"+{x:,.0f} kr".replace(",", ".") if x > 0 else f"{x:,.0f} kr".replace(",", ".")
+# Begræns target mellem min og max
+target = max(SECTOR_MIN, min(float(target), SECTOR_MAX))
     )
 
 if "MomentumScore" in rebal_df.columns:
