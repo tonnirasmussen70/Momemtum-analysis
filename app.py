@@ -337,18 +337,26 @@ SECTOR_MIN = 0.05
 target = SECTOR_MIN
 
 # Hvis der findes en momentum-score, beregn target ud fra den
-if "Momentum Score" in df.columns:
-    momentum_score = df["Momentum Score"].mean()
+momentum_col = None
 
-    if pd.notna(momentum_score):
-        if momentum_score >= 8:
-            target = SECTOR_MAX
-        elif momentum_score >= 6:
-            target = 0.15
-        elif momentum_score >= 4:
-            target = 0.10
-        else:
-            target = SECTOR_MIN
+for col in [
+    "Momentum Score",
+    "Momentum",
+    "Risk adjusted momentum",
+    "Risk-adjusted Momentum",
+    "Risk Adjusted Momentum",
+    "MOM Score",
+    "Score"
+]:
+    if col in df.columns:
+        momentum_col = col
+        break
+
+if momentum_col is not None:
+    df["Anbefalet vægt"] = df[momentum_col].apply(calc_target_weight)
+else:
+    st.warning("Ingen momentum-kolonne fundet. Anbefalet vægt sættes til minimum.")
+    df["Anbefalet vægt"] = SECTOR_MIN
 
 # Begræns target mellem min og max
 target = max(SECTOR_MIN, min(float(target), SECTOR_MAX)
