@@ -414,14 +414,36 @@ for col in [
     "Sharpe",
     "Sortino",
 ]:
-    if col in rebal_df.columns:
-        rebal_df[col] = rebal_df[col] * 100
 
 if "TradeDKK" in rebal_df.columns:
     rebal_df["TradeDKK"] = (
         rebal_df["TradeDKK"]
         .round(0)
     )
+rebal_display = rebal_df.copy()
+
+for col in ["Weight", "TargetWeight", "TargetSectorWeight"]:
+    if col in rebal_display.columns:
+        rebal_display[col] = rebal_display[col].apply(
+            lambda x: f"{x:.1f}%" if pd.notnull(x) else ""
+        )
+
+for col in ["MomentumScore", "Sharpe", "Sortino"]:
+    if col in rebal_display.columns:
+        rebal_display[col] = rebal_display[col].apply(
+            lambda x: f"{x:.1f}" if pd.notnull(x) else ""
+        )
+
+if "TradeDKK" in rebal_display.columns:
+    rebal_display["TradeDKK"] = rebal_display["TradeDKK"].apply(
+        lambda x: f"{x:,.0f} kr".replace(",", ".") if pd.notnull(x) else ""
+    )
+
+st.dataframe(
+    rebal_display,
+    use_container_width=True,
+    hide_index=True,
+)
 
 st.dataframe(
     rebal_df,
