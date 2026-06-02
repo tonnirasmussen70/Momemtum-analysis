@@ -406,7 +406,22 @@ if {"Sector", "MomentumScore"}.issubset(report.columns):
 else:
     rebal_df["TargetSectorWeight"] = rebal_df["Weight"]
 
+for col in [
+    "Weight",
+    "TargetWeight",
+    "TargetSectorWeight",
+    "MomentumScore",
+    "Sharpe",
+    "Sortino",
+]:
+    if col in rebal_df.columns:
+        rebal_df[col] = rebal_df[col] * 100
 
+if "TradeDKK" in rebal_df.columns:
+    rebal_df["TradeDKK"] = (
+        rebal_df["TradeDKK"]
+        .round(0)
+    )
 
 st.dataframe(
     rebal_df,
