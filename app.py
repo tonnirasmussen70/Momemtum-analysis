@@ -129,10 +129,11 @@ def get_prices(tickers, period):
 
 try:
     prices = get_prices(tickers, period)
-except Exception as exc:
-    st.warning("Yahoo/yfinance kunne ikke hente kursdata lige nu. Rapporten vises uden opdateret momentum.")
-    st.exception(exc)
-    prices = pd.DataFrame()
+    
+st.write("Tickers:", tickers)
+
+if not prices.empty:
+    st.write("Pris kolonner:", list(prices.columns))
     
 if prices.empty:
     st.error("Jeg kunne ikke hente kursdata. Tjek tickerkoder eller ISIN-mapping til kursdata.")
