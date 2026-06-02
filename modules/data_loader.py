@@ -5,7 +5,19 @@ from typing import Optional
 
 import pandas as pd
 
-NAME_COLUMNS = ["etf_navn", "etf navn", "navn", "name", "instrument", "instrumentnavn"]
+NAME_COLUMNS = [
+    "etf",
+    "instrument",
+    "navn",
+    "etf_navn",
+    "name",
+    "etf navn",
+    "etf name",
+    "produkt",
+    "security",
+    "description",
+]
+
 ISIN_COLUMNS = ["isin", "isin kode", "isin-kode"]
 TICKER_COLUMNS = ["ticker", "symbol", "kode"]
 EXPOSURE_COLUMNS = [
