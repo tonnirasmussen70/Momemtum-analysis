@@ -334,8 +334,6 @@ st.dataframe(
 )
 st.subheader("Rebalanceringsindikation")
 
-st.subheader("Rebalanceringsindikation")
-
 portfolio_value = report["Exposure"].sum(skipna=True)
 
 # Start med aktuel vægt
