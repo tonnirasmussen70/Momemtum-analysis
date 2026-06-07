@@ -433,10 +433,24 @@ for col in ["Sharpe", "Sortino"]:
             lambda x: f"{x:.1f}" if pd.notnull(x) else ""
         )
 
+# Automatisk højde → ingen scroll
+rebal_height = min((len(rebal_display) + 1) * 42, 900)
+
+# Zebra-striber
+def zebra_rows(row):
+    bg = "#101826" if row.name % 2 == 0 else "#162033"
+    return [f"background-color: {bg}"] * len(row)
+
+rebal_styled = (
+    rebal_display.style
+    .apply(zebra_rows, axis=1)
+)
+
 st.dataframe(
-    rebal_display,
+    rebal_styled,
     use_container_width=True,
     hide_index=True,
+    height=rebal_height,
 )
 
 csv = report.to_csv(index=False).encode("utf-8-sig")
