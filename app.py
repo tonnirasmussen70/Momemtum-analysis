@@ -217,7 +217,6 @@ st.dataframe(
     hide_index=True,
     height=table_height,
 )
-)
    
 left, right = st.columns(2)
 with left:
