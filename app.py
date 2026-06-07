@@ -198,15 +198,25 @@ for col in ["1M", "3M", "6M", "12M"]:
             lambda x: f"{x:.2%}" if pd.notnull(x) else ""
         )
 
+# Højde så alle ETF'er vises
+table_height = min((len(styled) + 1) * 42, 900)
+
+# Zebra-striber
+def zebra_rows(row):
+    bg = "#101826" if row.name % 2 == 0 else "#162033"
+    return [f"background-color: {bg}"] * len(row)
+
+styled_display = (
+    styled.style
+    .apply(zebra_rows, axis=1)
+)
+
 st.dataframe(
-    styled,
+    styled_display,
     use_container_width=True,
     hide_index=True,
-    column_config={
-        "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
-        "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
-        "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
-    },
+    height=table_height,
+)
 )
    
 left, right = st.columns(2)
