@@ -91,35 +91,55 @@ if "Weight" in portfolio_display.columns:
     )
 
 st.dataframe(
-    zebra_table(portfolio_display),
+    portfolio_display,
     use_container_width=True,
     hide_index=True,
-    height=auto_height(portfolio_display),
+    column_config={
+        "Quantity": st.column_config.NumberColumn("Antal", format="%.0f"),
+        "InputPrice": st.column_config.NumberColumn("Kurs", format="%.2f"),
+        "LastPrice": st.column_config.NumberColumn("Dags kurs", format="%.2f"),
+    },
 )
 
 # Kursdata hentes ud fra Ticker-kolonnen. Hvis Ticker mangler, falder appen tilbage til ISIN,
 # men det kræver at market_data.py kan mappe ISIN til et gyldigt kurs-symbol.
-tickers = sorted(portfolio["Ticker"].dropna().astype(str).unique().tolist())
+def is_isin(value):
+    value = str(value).strip().upper()
+    return len(value) == 12 and value[:2].isalpha() and value[-1].isdigit()
 
+tickers = (
+    portfolio["Ticker"]
+    .dropna()
+    .astype(str)
+    .str.strip()
+    .unique()
+    .tolist()
+)
+
+tickers = [
+    t for t in tickers
+    if t
+    and t.lower() != "nan"
+    and not is_isin(t)
+]
 
 @st.cache_data(show_spinner=True)
+
 def get_prices(tickers, period):
     return fetch_prices(tickers, period=period)
 
 prices = get_prices(tickers, period)
 
+st.info(f"Tickers fundet: {tickers}")
+
+if not prices.empty:
+    st.info(f"Kursdata hentet: {list(prices.columns)}")
+    
 if prices.empty:
     st.error("Jeg kunne ikke hente kursdata. Tjek tickerkoder eller ISIN-mapping til kursdata.")
     st.stop()
 
 momentum = calculate_momentum(prices)
-
-# Tilføj 1 uge momentum direkte fra prisdata
-if not prices.empty and len(prices) > 5:
-    mom_1w = prices.pct_change(5).iloc[-1].rename("1W").reset_index()
-    mom_1w.columns = ["Ticker", "1W"]
-    momentum = momentum.merge(mom_1w, on="Ticker", how="left")
-
 report = portfolio.merge(momentum, on="Ticker", how="left")
 report = add_stop_loss(report)
 
@@ -147,7 +167,6 @@ st.subheader("Momentum ranking")
 show_cols = [
     "ETF_Label",
     "Weight",
-    "1W",
     "1M",
     "3M",
     "6M",
@@ -173,21 +192,30 @@ if "Weight" in styled.columns:
         lambda x: f"{x:.2%}" if pd.notnull(x) else ""
     )
 
-for col in ["1W", "1M", "3M", "6M", "12M"]:
+for col in ["1M", "3M", "6M", "12M"]:
     if col in styled.columns:
         styled[col] = styled[col].apply(
             lambda x: f"{x:.2%}" if pd.notnull(x) else ""
         )
 
+# Højde så alle ETF'er vises
+table_height = min((len(styled) + 1) * 42, 900)
+
+# Zebra-striber
+def zebra_rows(row):
+    bg = "#101826" if row.name % 2 == 0 else "#162033"
+    return [f"background-color: {bg}"] * len(row)
+
+styled_display = (
+    styled.style
+    .apply(zebra_rows, axis=1)
+)
+
 st.dataframe(
-    styled,
+    styled_display,
     use_container_width=True,
     hide_index=True,
-    column_config={
-        "MomentumScore": st.column_config.NumberColumn("Momentum", format="%.2f"),
-        "Sharpe": st.column_config.NumberColumn("Sharpe", format="%.2f"),
-        "Sortino": st.column_config.NumberColumn("Sortino", format="%.2f"),
-    },
+    height=table_height,
 )
    
 left, right = st.columns(2)
@@ -196,7 +224,7 @@ with left:
 
 returns_long = (
     report[
-        ["ETF_Label", "1W", "1M", "3M", "6M", "12M"]
+        ["ETF_Label", "1M", "3M", "6M", "12M"]
     ]
     .melt(
         id_vars="ETF_Label",
@@ -300,30 +328,50 @@ overview = pd.DataFrame({
 })
 
 st.dataframe(
-    zebra_table(overview),
+    overview,
     use_container_width=True,
-    hide_index=True,
-    height=auto_height(overview),
+    hide_index=True
 )
 st.subheader("Rebalanceringsindikation")
 
 portfolio_value = report["Exposure"].sum(skipna=True)
 
-buy_mask = report["Signal"] == "Øg" if "Signal" in report.columns else False
-hold_mask = report["Signal"] == "Hold" if "Signal" in report.columns else False
-reduce_mask = report["Signal"].isin(["Afvent", "Reducer", "Sælg/undgå"]) if "Signal" in report.columns else False
-
-# ---------------------------------------------------
-# Basis rebalancering efter signal
-# ---------------------------------------------------
+# Start med aktuel vægt
 report["TargetWeight"] = report["Weight"].fillna(0)
 
-if "Signal" in report.columns:
-    report.loc[buy_mask, "TargetWeight"] *= 1.20
-    report.loc[hold_mask, "TargetWeight"] *= 1.00
-    report.loc[reduce_mask, "TargetWeight"] *= 0.80
+# Momentum-logik:
+# Stærke positioner må gerne holdes tæt på nuværende vægt
+# Reducér kun vindere hvis de er over POSITION_MAX
+for idx, row in report.iterrows():
+    weight = row.get("Weight", 0)
+    signal = row.get("Signal", "")
+    m1 = row.get("1M", None)
+    m3 = row.get("3M", None)
 
+    if signal == "Øg":
+        # Stærk trend: behold/øg, men max 20%
+        target = min(max(weight, weight * 1.05), POSITION_MAX)
+
+    elif signal == "Hold":
+        # Hold tæt på nuværende vægt
+        target = weight
+
+    elif signal in ["Afvent", "Reducer", "Sælg/undgå"]:
+        # Svagere signal: reducer moderat
+        target = weight * 0.80
+
+    else:
+        target = weight
+
+    # Ekstra gate: hvis 1M og 3M begge er negative, reducer hårdere
+    if pd.notnull(m1) and pd.notnull(m3) and m1 < 0 and m3 < 0:
+        target = weight * 0.65
+
+    report.at[idx, "TargetWeight"] = target
+
+# Normaliser så samlet target = 100%
 target_sum = report["TargetWeight"].sum(skipna=True)
+
 if target_sum and target_sum > 0:
     report["TargetWeight"] = report["TargetWeight"] / target_sum
 else:
@@ -332,9 +380,22 @@ else:
 report["TargetExposure"] = report["TargetWeight"] * portfolio_value
 report["TradeDKK"] = report["TargetExposure"] - report["Exposure"]
 
-# ---------------------------------------------------
-# Momentum-baseret sektor rebalancering
-# ---------------------------------------------------
+def trade_action(row):
+    trade = row.get("TradeDKK", 0)
+
+    if pd.isna(trade):
+        return "Afvent"
+
+    if trade > 500:
+        return "Køb / Øg"
+
+    if trade < -500:
+        return "Reducer"
+
+    return "Hold"
+
+report["Handling"] = report.apply(trade_action, axis=1)
+
 rebal_cols = [
     "ETF_Label",
     "Sector",
@@ -344,127 +405,52 @@ rebal_cols = [
     "Sharpe",
     "Sortino",
     "Signal",
+    "Handling",
 ]
+
 rebal_cols = [c for c in rebal_cols if c in report.columns]
-rebal_df = report[rebal_cols].copy()
 
-if {"Sector", "MomentumScore", "Weight"}.issubset(report.columns):
-    sector = (
-        report
-        .groupby("Sector", dropna=False)
-        .agg(
-            CurrentSectorWeight=("Weight", "sum"),
-            SectorMomentum=("MomentumScore", "mean"),
-        )
-        .reset_index()
+rebal_display = report[rebal_cols].copy()
+
+if "Weight" in rebal_display.columns:
+    rebal_display["Weight"] = rebal_display["Weight"].apply(
+        lambda x: f"{x:.1%}" if pd.notnull(x) else ""
     )
 
-    def calc_sector_weight(score):
-        if pd.isna(score):
-            return SECTOR_MIN
-        if score >= 0.80:
-            return SECTOR_MAX
-        elif score >= 0.60:
-            return 0.15
-        elif score >= 0.40:
-            return 0.10
-        elif score > 0:
-            return SECTOR_MIN
-        else:
-            return 0.00
-
-    sector["TargetSectorWeight"] = sector["SectorMomentum"].apply(calc_sector_weight)
-
-    sector_total = sector["TargetSectorWeight"].sum(skipna=True)
-    if sector_total and sector_total > 0:
-        sector["TargetSectorWeight"] = sector["TargetSectorWeight"] / sector_total
-    else:
-        sector["TargetSectorWeight"] = sector["CurrentSectorWeight"]
-
-    rebal_df = rebal_df.merge(
-        sector[["Sector", "TargetSectorWeight"]],
-        on="Sector",
-        how="left",
+if "TargetWeight" in rebal_display.columns:
+    rebal_display["TargetWeight"] = rebal_display["TargetWeight"].apply(
+        lambda x: f"{x:.1%}" if pd.notnull(x) else ""
     )
-
-    sector_weight_sum = rebal_df.groupby("Sector")["Weight"].transform("sum")
-    intra_sector_weight = rebal_df["Weight"] / sector_weight_sum.replace(0, pd.NA)
-
-    rebal_df["TargetWeight"] = rebal_df["TargetSectorWeight"] * intra_sector_weight
-    rebal_df["TargetWeight"] = rebal_df["TargetWeight"].fillna(rebal_df["Weight"])
-    rebal_df["TargetExposure"] = rebal_df["TargetWeight"] * portfolio_value
-    rebal_df["TradeDKK"] = rebal_df["TargetExposure"] - report.loc[rebal_df.index, "Exposure"].values
-else:
-    rebal_df["TargetSectorWeight"] = rebal_df.get("TargetWeight", rebal_df.get("Weight", 0))
-
-if "MomentumScore" in rebal_df.columns:
-    rebal_df = rebal_df.sort_values("MomentumScore", ascending=False, na_position="last")
-
-# ---------------------------------------------------
-# Visningsformat - ændrer ikke datagrundlaget
-# ---------------------------------------------------
-rebal_display = rebal_df.copy()
-
-# Kun vægte skal vises som %
-percent_cols = [
-    "Weight",
-    "TargetWeight",
-    "TargetSectorWeight",
-]
-
-for col in percent_cols:
-    if col in rebal_display.columns:
-        numeric_col = pd.to_numeric(
-            rebal_display[col],
-            errors="coerce"
-        )
-
-        rebal_display[col] = numeric_col.apply(
-            lambda x:
-            f"{x:.1%}"
-            if pd.notnull(x)
-            else ""
-        )
-
-# Momentum / Sharpe / Sortino = almindelige tal
-score_cols = [
-    "MomentumScore",
-    "Sharpe",
-    "Sortino",
-]
-
-for col in score_cols:
-    if col in rebal_display.columns:
-
-        numeric_col = pd.to_numeric(
-            rebal_display[col],
-            errors="coerce"
-        )
-
-        rebal_display[col] = numeric_col.apply(
-            lambda x:
-            f"{x:.1f}"
-            if pd.notnull(x)
-            else ""
-    
-        )
 
 if "TradeDKK" in rebal_display.columns:
-    trade_numeric = pd.to_numeric(
-        rebal_display["TradeDKK"],
-        errors="coerce"
+    rebal_display["TradeDKK"] = rebal_display["TradeDKK"].apply(
+        lambda x: f"{x:,.0f}".replace(",", ".") if pd.notnull(x) else ""
     )
 
-    rebal_display["TradeDKK"] = trade_numeric.map(
-        lambda x: f"{x:,.0f}".replace(",", ".")
-        if pd.notnull(x)
-        else ""
-    )
+for col in ["Sharpe", "Sortino"]:
+    if col in rebal_display.columns:
+        rebal_display[col] = rebal_display[col].apply(
+            lambda x: f"{x:.1f}" if pd.notnull(x) else ""
+        )
+
+# Automatisk højde → ingen scroll
+rebal_height = min((len(rebal_display) + 1) * 42, 900)
+
+# Zebra-striber
+def zebra_rows(row):
+    bg = "#101826" if row.name % 2 == 0 else "#162033"
+    return [f"background-color: {bg}"] * len(row)
+
+rebal_styled = (
+    rebal_display.style
+    .apply(zebra_rows, axis=1)
+)
 
 st.dataframe(
-    rebal_display,
+    rebal_styled,
     use_container_width=True,
     hide_index=True,
+    height=rebal_height,
 )
 
 csv = report.to_csv(index=False).encode("utf-8-sig")
@@ -509,10 +495,9 @@ rotation_signals = pd.DataFrame({
 })
 
 st.dataframe(
-    zebra_table(rotation_signals),
+    rotation_signals,
     use_container_width=True,
     hide_index=True,
-    height=auto_height(rotation_signals),
 )
 
 monthly_rules = pd.DataFrame({
@@ -535,10 +520,9 @@ monthly_rules = pd.DataFrame({
 })
 
 st.dataframe(
-    zebra_table(monthly_rules),
+    monthly_rules,
     use_container_width=True,
     hide_index=True,
-    height=auto_height(monthly_rules),
 )
 
 st.caption(
@@ -577,7 +561,6 @@ negative_1m = report.loc[
 kpi["Metric"] = [
     "Portfolio Sharpe",
     "Portfolio Sortino",
-    "1W momentum",
     "1M momentum",
     "12M est. portfolio return",
     "Max single ETF weight",
@@ -587,7 +570,6 @@ kpi["Metric"] = [
 kpi["Value"] = [
     f"{portfolio_sharpe:.2f}",
     f"{portfolio_sortino:.2f}",
-    f"{report['1W'].mean():.1%}" if "1W" in report.columns else "-",
     f"{report['1M'].mean():.1%}",
     f"{report['12M'].mean():.1%}",
     f"{top_weight} ({top_weight_pct:.1%})",
@@ -597,7 +579,6 @@ kpi["Value"] = [
 kpi["Read-out"] = [
     "🟢 Strong" if portfolio_sharpe > 2 else "🟡 Moderate",
     "🟢 Strong" if portfolio_sortino > 3 else "🟡 Moderate",
-    "🟢 Positive" if "1W" in report.columns and report["1W"].mean() > 0 else "🔴 Weak",
     "🟢 Positive" if report["1M"].mean() > 0 else "🔴 Weak",
     "🟢 Strong trend" if report["12M"].mean() > 0.5 else "🟡 Neutral",
     "🟡 Watch concentration" if top_weight_pct > 0.20 else "🟢 Balanced",
@@ -605,16 +586,14 @@ kpi["Read-out"] = [
 ]
 
 st.dataframe(
-    zebra_table(kpi),
+    kpi,
     use_container_width=True,
     hide_index=True,
-    height=auto_height(kpi),
 )
 
 # ---------- HEATMAP ----------
 
-heat_cols = ["1W", "1M", "3M", "6M", "12M"]
-heat_cols = [c for c in heat_cols if c in report.columns]
+heat_cols = ["1M", "3M", "6M", "12M"]
 
 heat = (
     report[
