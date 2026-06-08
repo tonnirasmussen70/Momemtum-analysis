@@ -4,6 +4,20 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+def zebra_table(df):
+
+    def zebra(row):
+        bg = "#101826" if row.name % 2 == 0 else "#162033"
+        return [f"background-color:{bg}"] * len(row)
+
+    return (
+        df.style
+        .apply(zebra, axis=1)
+    )
+
+def auto_height(df, row_px=42):
+    return min((len(df) + 1) * row_px, 1200)
+
 from modules.data_loader import load_excel_file, standardize_portfolio
 from modules.market_data import fetch_prices
 from modules.momentum import calculate_momentum
