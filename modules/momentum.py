@@ -16,7 +16,7 @@ def pct_return(series: pd.Series, days: int) -> float:
 
 
 def score_row(row: pd.Series) -> float:
-    weights = {"1M": 0.15, "3M": 0.30, "6M": 0.30, "12M": 0.25}
+    weights = {"1M": 0.25, "3M": 0.30, "6M": 0.30, "12M": 0.10}
     raw = 0.0
     used = 0.0
     for key, weight in weights.items():
