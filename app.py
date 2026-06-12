@@ -34,13 +34,65 @@ with st.sidebar:
     st.write("**Signalmodel**")
     st.caption("Øg / Hold / Reducer baseres på risikojusteret momentum og 1M/3M trend.")
 
-st.divider()
-st.write("**Momentum-vægtning**")
+# -------------------------
+# SIDEBAR – Momentum-vægtning
+# -------------------------
 
-w_1m = st.slider("Vægt 1M", 0.00, 0.60, 0.15, 0.05)
-w_3m = st.slider("Vægt 3M", 0.00, 0.60, 0.25, 0.05)
-w_6m = st.slider("Vægt 6M", 0.00, 0.60, 0.30, 0.05)
-w_12m = st.slider("Vægt 12M", 0.00, 0.60, 0.30, 0.05)
+with st.sidebar:
+
+    st.markdown("---")
+    st.subheader("⚙️ Momentum-vægtning")
+
+    w_1m = st.slider(
+        "1M",
+        min_value=0.00,
+        max_value=0.60,
+        value=0.15,
+        step=0.05
+    )
+
+    w_3m = st.slider(
+        "3M",
+        0.00,
+        0.60,
+        0.25,
+        0.05
+    )
+
+    w_6m = st.slider(
+        "6M",
+        0.00,
+        0.60,
+        0.30,
+        0.05
+    )
+
+    w_12m = st.slider(
+        "12M",
+        0.00,
+        0.60,
+        0.30,
+        0.05
+    )
+
+    total = w_1m + w_3m + w_6m + w_12m
+
+    if total == 0:
+        st.error("Vægte må ikke være 0")
+        st.stop()
+
+    w_1m /= total
+    w_3m /= total
+    w_6m /= total
+    w_12m /= total
+
+    st.caption(
+        f"Normaliseret: "
+        f"{w_1m:.0%} / "
+        f"{w_3m:.0%} / "
+        f"{w_6m:.0%} / "
+        f"{w_12m:.0%}"
+    )
 
 weight_sum = w_1m + w_3m + w_6m + w_12m
 
