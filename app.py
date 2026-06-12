@@ -34,6 +34,24 @@ with st.sidebar:
     st.write("**Signalmodel**")
     st.caption("Øg / Hold / Reducer baseres på risikojusteret momentum og 1M/3M trend.")
 
+st.divider()
+st.write("**Momentum-vægtning**")
+
+w_1m = st.slider("Vægt 1M", 0.00, 0.60, 0.15, 0.05)
+w_3m = st.slider("Vægt 3M", 0.00, 0.60, 0.25, 0.05)
+w_6m = st.slider("Vægt 6M", 0.00, 0.60, 0.30, 0.05)
+w_12m = st.slider("Vægt 12M", 0.00, 0.60, 0.30, 0.05)
+
+weight_sum = w_1m + w_3m + w_6m + w_12m
+
+if weight_sum == 0:
+    st.error("Momentum-vægtene må ikke alle være 0.")
+    st.stop()
+
+w_1m = w_1m / weight_sum
+w_3m = w_3m / weight_sum
+w_6m = w_6m / weight_sum
+w_12m = w_12m / weight_sum
 
 @st.cache_data(show_spinner=False)
 def load_portfolio_from_uploads(files):
