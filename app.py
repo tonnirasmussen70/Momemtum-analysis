@@ -219,7 +219,7 @@ if not trend_index.empty:
     trend_index.iloc[0] = 100
 
 weights = (
-    report
+    df
     .set_index("Ticker")["Weight"]
     .reindex(trend_index.columns)
     .fillna(0)
