@@ -19,6 +19,65 @@ SECTOR_MAX = 0.20   # 20% max vægt pr. sektor
 SECTOR_MIN = 0.03   # 3% minimum hvis sektoren stadig er aktiv
 POSITION_MAX = 0.20 # 20% max vægt pr. enkeltposition
 
+st.subheader("Relativ trendudvikling – indeks 100")
+
+trend_prices = prices.copy()
+
+trend_index = (
+    trend_prices
+    .resample("ME")
+    .last()
+    .pct_change()
+    .add(1)
+    .cumprod()
+    * 100
+)
+
+if not trend_index.empty:
+    trend_index.iloc[0] = 100
+
+weights = (
+    report
+    .set_index("Ticker")["Weight"]
+    .reindex(trend_index.columns)
+    .fillna(0)
+)
+
+trend_index["Portefølje"] = (
+    trend_index.mul(weights, axis=1)
+    .sum(axis=1)
+)
+
+trend_long = (
+    trend_index
+    .reset_index()
+    .melt(
+        id_vars=trend_index.index.name or "Date",
+        var_name="ETF",
+        value_name="Indeks"
+    )
+)
+
+fig_trend = px.line(
+    trend_long,
+    x=trend_index.index.name or "Date",
+    y="Indeks",
+    color="ETF",
+    title="Relativ trendudvikling – indeks 100",
+)
+
+fig_trend.update_layout(
+    height=650,
+    xaxis_title="Måned",
+    yaxis_title="Indekseret udvikling",
+    hovermode="x unified",
+)
+
+st.plotly_chart(
+    fig_trend,
+    use_container_width=True
+)
+
 st.title("Momentum Dashboard")
 st.caption("Browserbaseret ETF/aktie-dashboard med momentum, Sharpe, Sortino, drawdown og stop-loss forslag")
 
