@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -20,8 +21,8 @@ SECTOR_MIN = 0.03   # 3% minimum hvis sektoren stadig er aktiv
 POSITION_MAX = 0.20 # 20% max vægt pr. enkeltposition
 
 
-st.title("Momentum Dashboard")
-st.caption("Browserbaseret ETF/aktie-dashboard med momentum, Sharpe, Sortino, drawdown og stop-loss forslag")
+st.title("Momentum Dashboard + Capital Flow")
+st.caption("Browserbaseret ETF/aktie-dashboard med momentum, Sharpe, Sortino, drawdown, stop-loss og Capital Flow Score")
 
 with st.sidebar:
     st.header("Upload portefølje")
@@ -34,6 +35,15 @@ with st.sidebar:
     st.divider()
     st.write("**Signalmodel**")
     st.caption("Øg / Hold / Reducer baseres på risikojusteret momentum og 1M/3M trend.")
+
+    st.divider()
+    st.write("**Capital Flow Score**")
+    benchmark_ticker = st.selectbox(
+        "Benchmark for relativ styrke",
+        ["URTH", "ACWI", "SPY", "QQQ", "XLI", "XLK"],
+        index=0,
+        help="URTH/ACWI bruges som globalt marked. SPY/QQQ kan bruges som USA/growth benchmark."
+    )
 
 # -------------------------
 # SIDEBAR – Momentum-vægtning
@@ -105,6 +115,76 @@ w_1m = w_1m / weight_sum
 w_3m = w_3m / weight_sum
 w_6m = w_6m / weight_sum
 w_12m = w_12m / weight_sum
+
+
+def calculate_capital_flow_from_prices(
+    price_data: pd.DataFrame,
+    asset_ticker: str,
+    benchmark_ticker: str = "URTH",
+) -> tuple[float, str]:
+    """
+    Capital Flow Proxy Score 0-100.
+
+    Scoren er ikke ægte ETF-flow. Den er en proxy for kapitalrotation baseret på:
+    - 1M relativ styrke mod benchmark
+    - 3M relativ styrke mod benchmark
+    - 3M absolut momentum
+    - 50/200 dages trend
+    """
+
+    try:
+        if asset_ticker not in price_data.columns or benchmark_ticker not in price_data.columns:
+            return np.nan, "Mangler benchmark"
+
+        aligned = (
+            price_data[[asset_ticker, benchmark_ticker]]
+            .dropna()
+            .rename(columns={asset_ticker: "asset", benchmark_ticker: "benchmark"})
+        )
+
+        if len(aligned) < 80:
+            return np.nan, "For kort historik"
+
+        # Brug dynamiske lookbacks, så funktionen også virker ved kortere historik
+        lb_1m = min(21, len(aligned) - 1)
+        lb_3m = min(63, len(aligned) - 1)
+
+        mom_1m = aligned["asset"].iloc[-1] / aligned["asset"].iloc[-lb_1m] - 1
+        mom_3m = aligned["asset"].iloc[-1] / aligned["asset"].iloc[-lb_3m] - 1
+
+        bench_1m = aligned["benchmark"].iloc[-1] / aligned["benchmark"].iloc[-lb_1m] - 1
+        bench_3m = aligned["benchmark"].iloc[-1] / aligned["benchmark"].iloc[-lb_3m] - 1
+
+        rel_1m = mom_1m - bench_1m
+        rel_3m = mom_3m - bench_3m
+
+        ma50 = aligned["asset"].rolling(50).mean().iloc[-1]
+        ma200 = aligned["asset"].rolling(200).mean().iloc[-1] if len(aligned) >= 200 else aligned["asset"].rolling(100).mean().iloc[-1]
+        trend_score = 1 if ma50 > ma200 else 0
+
+        score = (
+            40 * np.clip((rel_3m + 0.10) / 0.20, 0, 1) +
+            30 * np.clip((rel_1m + 0.06) / 0.12, 0, 1) +
+            20 * np.clip((mom_3m + 0.10) / 0.25, 0, 1) +
+            10 * trend_score
+        )
+
+        if score >= 75:
+            label = "Stærk indstrømning"
+        elif score >= 55:
+            label = "Positiv rotation"
+        elif score >= 40:
+            label = "Neutral"
+        elif score >= 25:
+            label = "Svag rotation"
+        else:
+            label = "Kapital ud"
+
+        return round(float(score), 1), label
+
+    except Exception:
+        return np.nan, "Fejl"
+
 
 @st.cache_data(show_spinner=False)
 def load_portfolio_from_uploads(files):
@@ -194,12 +274,163 @@ tickers = [
     and not is_isin(t)
 ]
 
+portfolio_tickers = tickers.copy()
+
+# Benchmark hentes sammen med porteføljen, så Capital Flow Score kan beregnes
+# uden ekstra yfinance-kald.
+if benchmark_ticker and benchmark_ticker not in tickers:
+    tickers.append(benchmark_ticker)
+
 @st.cache_data(show_spinner=True)
 
 def get_prices(tickers, period):
     return fetch_prices(tickers, period=period)
 
 prices = get_prices(tickers, period)
+
+st.info(f"Tickers fundet: {tickers}")
+
+if not prices.empty:
+    st.info(f"Kursdata hentet: {list(prices.columns)}")
+    
+if prices.empty:
+    st.error("Jeg kunne ikke hente kursdata. Tjek tickerkoder eller ISIN-mapping til kursdata.")
+    st.stop()
+
+st.success("✅ Capital Flow Score er aktiv. Dashboardet vises nu før trendgrafen, så ændringen er tydelig med det samme.")
+
+momentum_prices = prices[[c for c in portfolio_tickers if c in prices.columns]].copy()
+momentum = calculate_momentum(momentum_prices)
+report = portfolio.merge(momentum, on="Ticker", how="left")
+report = add_stop_loss(report)
+
+# ---------------------------------------------------
+# Capital Flow Score
+# ---------------------------------------------------
+capital_flow_rows = []
+
+for ticker in report["Ticker"].dropna().astype(str).str.strip():
+    score, signal = calculate_capital_flow_from_prices(
+        prices,
+        ticker,
+        benchmark_ticker=benchmark_ticker,
+    )
+    capital_flow_rows.append({
+        "Ticker": ticker,
+        "CapitalFlowScore": score,
+        "CapitalFlowSignal": signal,
+    })
+
+capital_flow = pd.DataFrame(capital_flow_rows).drop_duplicates("Ticker")
+
+report = report.merge(
+    capital_flow,
+    on="Ticker",
+    how="left"
+)
+
+# Brug ETF_Navn som label overalt i rapporten. Fallback til Ticker hvis navn mangler.
+if "ETF_Navn" not in report.columns:
+    report["ETF_Navn"] = report.get("Ticker", "")
+report["ETF_Label"] = report["ETF_Navn"].fillna("").astype(str).str.strip()
+report.loc[report["ETF_Label"].eq("") | report["ETF_Label"].str.lower().eq("nan"), "ETF_Label"] = report["Ticker"]
+
+total_exposure = report["Exposure"].sum(skipna=True) if "Exposure" in report.columns else 0
+valid_score = report["MomentumScore"].dropna() if "MomentumScore" in report.columns else pd.Series(dtype=float)
+weak = (report["Signal"].isin(["Reducer", "Sælg/undgå"])).sum() if "Signal" in report.columns else 0
+
+portfolio_sharpe = (report["Weight"] * report["Sharpe"]).sum(skipna=True) if {"Weight", "Sharpe"}.issubset(report.columns) else None
+portfolio_sortino = (report["Weight"] * report["Sortino"]).sum(skipna=True) if {"Weight", "Sortino"}.issubset(report.columns) else None
+
+col1, col2, col3, col4, col5 = st.columns(5)
+
+col1.metric("Positioner", len(report))
+col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
+col3.metric("Portefølje Sharpe", f"{portfolio_sharpe:.2f}" if portfolio_sharpe is not None else "-")
+col4.metric("Portefølje Sortino", f"{portfolio_sortino:.2f}" if portfolio_sortino is not None else "-")
+
+portfolio_capital_flow = (
+    (report["Weight"] * report["CapitalFlowScore"]).sum(skipna=True)
+    if {"Weight", "CapitalFlowScore"}.issubset(report.columns) else None
+)
+col5.metric("Capital Flow Score", f"{portfolio_capital_flow:.1f}" if portfolio_capital_flow is not None else "-")
+
+# ---------------------------------------------------
+# Capital Flow Dashboard
+# ---------------------------------------------------
+st.subheader("💸 Capital Flow Dashboard – sektorrotation")
+
+capital_cols = [
+    "ETF_Label",
+    "Ticker",
+    "Weight",
+    "1M",
+    "3M",
+    "CapitalFlowScore",
+    "CapitalFlowSignal",
+]
+
+capital_cols = [c for c in capital_cols if c in report.columns]
+capital_display = report[capital_cols].copy()
+
+if "Weight" in capital_display.columns:
+    capital_display["Weight"] = capital_display["Weight"].apply(
+        lambda x: f"{x:.1%}" if pd.notnull(x) else ""
+    )
+
+for col in ["1M", "3M"]:
+    if col in capital_display.columns:
+        capital_display[col] = capital_display[col].apply(
+            lambda x: f"{x:.1%}" if pd.notnull(x) else ""
+        )
+
+if "CapitalFlowScore" in capital_display.columns:
+    capital_display = capital_display.sort_values(
+        "CapitalFlowScore",
+        ascending=False,
+        na_position="last"
+    )
+    capital_display["CapitalFlowScore"] = capital_display["CapitalFlowScore"].apply(
+        lambda x: f"{x:.1f}" if pd.notnull(x) else ""
+    )
+
+if "CapitalFlowScore" in report.columns and report["CapitalFlowScore"].notna().sum() == 0:
+    st.warning(
+        "Capital Flow Score kunne ikke beregnes. Tjek at benchmark-tickeren hentes korrekt, "
+        "og at porteføljens tickers matcher yfinance-symbolerne."
+    )
+
+st.dataframe(
+    capital_display,
+    use_container_width=True,
+    hide_index=True,
+    height=min((len(capital_display) + 1) * 42, 650),
+)
+
+st.caption(
+    "Capital Flow Score er en proxy for sektorrotation: relativ styrke mod benchmark, 1M/3M momentum og 50/200-dages trend. "
+    "Den bruges som beslutningsstøtte – ikke som automatisk køb/salg."
+)
+
+cf_left, cf_right = st.columns(2)
+
+with cf_left:
+    st.markdown("**Stærkest kapitalrotation**")
+    top_cf = report.sort_values("CapitalFlowScore", ascending=False, na_position="last").head(5)
+    st.dataframe(
+        top_cf[[c for c in ["ETF_Label", "CapitalFlowScore", "CapitalFlowSignal"] if c in top_cf.columns]],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+with cf_right:
+    st.markdown("**Svagest kapitalrotation**")
+    weak_cf = report.sort_values("CapitalFlowScore", ascending=True, na_position="last").head(5)
+    st.dataframe(
+        weak_cf[[c for c in ["ETF_Label", "CapitalFlowScore", "CapitalFlowSignal"] if c in weak_cf.columns]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
 st.subheader("Relativ trendudvikling – indeks 100")
 
@@ -260,38 +491,7 @@ st.plotly_chart(
     use_container_width=True
 )
 
-st.info(f"Tickers fundet: {tickers}")
 
-if not prices.empty:
-    st.info(f"Kursdata hentet: {list(prices.columns)}")
-    
-if prices.empty:
-    st.error("Jeg kunne ikke hente kursdata. Tjek tickerkoder eller ISIN-mapping til kursdata.")
-    st.stop()
-
-momentum = calculate_momentum(prices)
-report = portfolio.merge(momentum, on="Ticker", how="left")
-report = add_stop_loss(report)
-
-# Brug ETF_Navn som label overalt i rapporten. Fallback til Ticker hvis navn mangler.
-if "ETF_Navn" not in report.columns:
-    report["ETF_Navn"] = report.get("Ticker", "")
-report["ETF_Label"] = report["ETF_Navn"].fillna("").astype(str).str.strip()
-report.loc[report["ETF_Label"].eq("") | report["ETF_Label"].str.lower().eq("nan"), "ETF_Label"] = report["Ticker"]
-
-total_exposure = report["Exposure"].sum(skipna=True) if "Exposure" in report.columns else 0
-valid_score = report["MomentumScore"].dropna() if "MomentumScore" in report.columns else pd.Series(dtype=float)
-weak = (report["Signal"].isin(["Reducer", "Sælg/undgå"])).sum() if "Signal" in report.columns else 0
-
-portfolio_sharpe = (report["Weight"] * report["Sharpe"]).sum(skipna=True) if {"Weight", "Sharpe"}.issubset(report.columns) else None
-portfolio_sortino = (report["Weight"] * report["Sortino"]).sum(skipna=True) if {"Weight", "Sortino"}.issubset(report.columns) else None
-
-col1, col2, col3, col4, col5 = st.columns(5)
-
-col1.metric("Positioner", len(report))
-col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
-col3.metric("Portefølje Sharpe", f"{portfolio_sharpe:.2f}" if portfolio_sharpe is not None else "-")
-col4.metric("Portefølje Sortino", f"{portfolio_sortino:.2f}" if portfolio_sortino is not None else "-")
 
 st.subheader("Momentum ranking")
 show_cols = [
@@ -307,6 +507,8 @@ show_cols = [
     "StopPrice",
     "AlarmPct",
     "StopAction",
+    "CapitalFlowScore",
+    "CapitalFlowSignal",
     ]
 show_cols = [c for c in show_cols if c in report.columns]
 
@@ -535,6 +737,8 @@ rebal_cols = [
     "Sharpe",
     "Sortino",
     "Signal",
+    "CapitalFlowScore",
+    "CapitalFlowSignal",
     "Handling",
 ]
 
@@ -557,7 +761,7 @@ if "TradeDKK" in rebal_display.columns:
         lambda x: f"{x:,.0f}".replace(",", ".") if pd.notnull(x) else ""
     )
 
-for col in ["Sharpe", "Sortino"]:
+for col in ["Sharpe", "Sortino", "CapitalFlowScore"]:
     if col in rebal_display.columns:
         rebal_display[col] = rebal_display[col].apply(
             lambda x: f"{x:.1f}" if pd.notnull(x) else ""
@@ -688,6 +892,12 @@ negative_1m = report.loc[
     "ETF_Label"
 ].tolist()
 
+avg_capital_flow = (
+    (report["Weight"] * report["CapitalFlowScore"]).sum(skipna=True)
+    if {"Weight", "CapitalFlowScore"}.issubset(report.columns)
+    else None
+)
+
 kpi["Metric"] = [
     "Portfolio Sharpe",
     "Portfolio Sortino",
@@ -695,6 +905,7 @@ kpi["Metric"] = [
     "12M est. portfolio return",
     "Max single ETF weight",
     "Negative 1M names",
+    "Capital Flow Score",
 ]
 
 kpi["Value"] = [
@@ -704,6 +915,7 @@ kpi["Value"] = [
     f"{report['12M'].mean():.1%}",
     f"{top_weight} ({top_weight_pct:.1%})",
     ", ".join(negative_1m[:5]),
+    f"{avg_capital_flow:.1f}" if avg_capital_flow is not None else "-",
 ]
 
 kpi["Read-out"] = [
@@ -713,6 +925,7 @@ kpi["Read-out"] = [
     "🟢 Strong trend" if report["12M"].mean() > 0.5 else "🟡 Neutral",
     "🟡 Watch concentration" if top_weight_pct > 0.20 else "🟢 Balanced",
     "🔴 Review negative positions" if len(negative_1m) else "🟢 None",
+    "🟢 Positive rotation" if avg_capital_flow and avg_capital_flow >= 55 else "🟡 Neutral/weak rotation",
 ]
 
 st.dataframe(
