@@ -246,6 +246,18 @@ if portfolio.empty:
 
 portfolio_display = portfolio[[c for c in ["ETF_Navn", "Quantity", "InputPrice", "LastPrice", "Exposure", "Weight", "Sector"] if c in portfolio.columns]].copy()
 
+# Vis porteføljeinput pænt uden unødvendige decimaler
+for col in ["Quantity", "InputPrice"]:
+    if col in portfolio_display.columns:
+        portfolio_display[col] = portfolio_display[col].apply(
+            lambda x: "" if pd.isna(x) else f"{float(x):.0f}"
+        )
+
+if "LastPrice" in portfolio_display.columns:
+    portfolio_display["LastPrice"] = portfolio_display["LastPrice"].apply(
+        lambda x: "" if pd.isna(x) else f"{float(x):.2f}"
+    )
+
 if "Exposure" in portfolio_display.columns:
     portfolio_display["Exposure"] = portfolio_display["Exposure"].apply(format_dkk)
 if "Weight" in portfolio_display.columns:
