@@ -24,6 +24,13 @@ POSITION_MAX = 0.20 # 20% max vægt pr. enkeltposition
 st.title("Momentum Dashboard + Capital Flow")
 st.caption("Browserbaseret ETF/aktie-dashboard med momentum, Sharpe, Sortino, drawdown, stop-loss og Capital Flow Score")
 
+col1, col2, col3, col4, col5 = st.columns(5)
+
+col1.metric("Positioner", len(report))
+col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
+col3.metric("Portefølje Sharpe", f"{portfolio_sharpe:.2f}" if portfolio_sharpe is not None else "-")
+col4.metric("Portefølje Sortino", f"{portfolio_sortino:.2f}" if portfolio_sortino is not None else "-")
+
 with st.sidebar:
     st.header("Upload portefølje")
     uploaded_files = st.file_uploader(
@@ -344,13 +351,6 @@ weak = (report["Signal"].isin(["Reducer", "Sælg/undgå"])).sum() if "Signal" in
 
 portfolio_sharpe = (report["Weight"] * report["Sharpe"]).sum(skipna=True) if {"Weight", "Sharpe"}.issubset(report.columns) else None
 portfolio_sortino = (report["Weight"] * report["Sortino"]).sum(skipna=True) if {"Weight", "Sortino"}.issubset(report.columns) else None
-
-col1, col2, col3, col4, col5 = st.columns(5)
-
-col1.metric("Positioner", len(report))
-col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
-col3.metric("Portefølje Sharpe", f"{portfolio_sharpe:.2f}" if portfolio_sharpe is not None else "-")
-col4.metric("Portefølje Sortino", f"{portfolio_sortino:.2f}" if portfolio_sortino is not None else "-")
 
 portfolio_capital_flow = (
     (report["Weight"] * report["CapitalFlowScore"]).sum(skipna=True)
