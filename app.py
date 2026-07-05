@@ -241,10 +241,13 @@ if "Weight" in portfolio_display.columns:
         lambda x: f"{x:.2%}" if pd.notnull(x) else ""
     )
 
+portfolio_input_height = min((len(portfolio_display) + 1) * 42, 900)
+
 st.dataframe(
     portfolio_display,
     use_container_width=True,
     hide_index=True,
+    height=portfolio_input_height,
     column_config={
         "Quantity": st.column_config.NumberColumn("Antal", format="%.0f"),
         "InputPrice": st.column_config.NumberColumn("Kurs", format="%.2f"),
