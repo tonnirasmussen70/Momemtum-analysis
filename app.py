@@ -24,13 +24,6 @@ POSITION_MAX = 0.20 # 20% max vægt pr. enkeltposition
 st.title("Momentum Dashboard + Capital Flow")
 st.caption("Browserbaseret ETF/aktie-dashboard med momentum, Sharpe, Sortino, drawdown, stop-loss og Capital Flow Score")
 
-col1, col2, col3, col4, col5 = st.columns(5)
-
-col1.metric("Positioner", len(report))
-col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
-col3.metric("Portefølje Sharpe", f"{portfolio_sharpe:.2f}" if portfolio_sharpe is not None else "-")
-col4.metric("Portefølje Sortino", f"{portfolio_sortino:.2f}" if portfolio_sortino is not None else "-")
-
 with st.sidebar:
     st.header("Upload portefølje")
     uploaded_files = st.file_uploader(
@@ -313,6 +306,13 @@ momentum_prices = prices[[c for c in portfolio_tickers if c in prices.columns]].
 momentum = calculate_momentum(momentum_prices)
 report = portfolio.merge(momentum, on="Ticker", how="left")
 report = add_stop_loss(report)
+
+col1, col2, col3, col4, col5 = st.columns(5)
+
+col1.metric("Positioner", len(report))
+col2.metric("Samlet porteføljeværdi", f"{total_exposure:,.0f} kr".replace(",", "."))
+col3.metric("Portefølje Sharpe", f"{portfolio_sharpe:.2f}" if portfolio_sharpe is not None else "-")
+col4.metric("Portefølje Sortino", f"{portfolio_sortino:.2f}" if portfolio_sortino is not None else "-")
 
 # ---------------------------------------------------
 # Capital Flow Score
