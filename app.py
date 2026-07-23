@@ -59,19 +59,61 @@ def format_pct(value, decimals=1):
         return value
 
 
+def period_return(series: pd.Series, lookback: int) -> float:
+    """Beregn afkast over et antal handelsdage med robust håndtering af korte serier."""
+    clean = series.dropna()
+    if len(clean) <= lookback:
+        return np.nan
+    return clean.iloc[-1] / clean.iloc[-(lookback + 1)] - 1
+
+
+def percentile_score(series: pd.Series) -> pd.Series:
+    """Tværsnitsrangering på 0-1, så forskellige måleenheder kan kombineres."""
+    numeric = pd.to_numeric(series, errors="coerce")
+    if numeric.notna().sum() <= 1:
+        return pd.Series(np.where(numeric.notna(), 0.5, np.nan), index=series.index)
+    return numeric.rank(pct=True, method="average")
+
+
+def rotation_signal(row: pd.Series) -> str:
+    w1 = row.get("1W")
+    m1 = row.get("1M")
+    m3 = row.get("3M")
+
+    if pd.isna(w1) or pd.isna(m1) or pd.isna(m3):
+        return "Datamangel"
+    if w1 > 0 and m1 < 0:
+        return "Tidlig positiv vending"
+    if w1 > (m1 / 4) and (m1 / 4) > (m3 / 13):
+        return "Accelererer"
+    if w1 < 0 and m1 < 0 and m3 < 0:
+        return "Negativ rotation"
+    if w1 < (m1 / 4) and (m1 / 4) < (m3 / 13):
+        return "Momentum svækkes"
+    if w1 > 0 and m1 > 0:
+        return "Positiv rotation"
+    return "Neutral"
+
+
 def local_action_signal(row: pd.Series) -> str:
-    score = row.get("MomentumScore")
+    score = row.get("CompositeScore", row.get("MomentumScore"))
+    w1 = row.get("1W")
     m1 = row.get("1M")
     m3 = row.get("3M")
     m6 = row.get("6M")
+    rotation = row.get("RotationSignal", "")
 
     if pd.isna(score):
         return "Datamangel"
-    if score > 0.75 and m1 > 0 and m3 > 0:
+    if score >= 0.75 and w1 > 0 and m1 > 0 and m3 > 0:
         return "Øg"
-    if score > 0.25 and m3 > 0:
+    if rotation == "Tidlig positiv vending" and score >= 0.55:
+        return "Afvent bekræftelse"
+    if score >= 0.50 and m3 > 0:
         return "Hold"
-    if score < 0 and (m1 < 0 or m3 < 0):
+    if w1 < 0 and m1 < 0 and m3 < 0:
+        return "Sælg/undgå"
+    if score < 0.35 or (w1 < 0 and m1 < 0):
         return "Reducer"
     if m1 < 0 and m3 < 0 and m6 < 0:
         return "Sælg/undgå"
@@ -100,14 +142,18 @@ def calculate_capital_flow_from_prices(
         if len(aligned) < 80:
             return np.nan, "For kort historik"
 
+        lb_1w = min(5, len(aligned) - 1)
         lb_1m = min(21, len(aligned) - 1)
         lb_3m = min(63, len(aligned) - 1)
 
-        mom_1m = aligned["asset"].iloc[-1] / aligned["asset"].iloc[-lb_1m] - 1
-        mom_3m = aligned["asset"].iloc[-1] / aligned["asset"].iloc[-lb_3m] - 1
-        bench_1m = aligned["benchmark"].iloc[-1] / aligned["benchmark"].iloc[-lb_1m] - 1
-        bench_3m = aligned["benchmark"].iloc[-1] / aligned["benchmark"].iloc[-lb_3m] - 1
+        mom_1w = aligned["asset"].iloc[-1] / aligned["asset"].iloc[-(lb_1w + 1)] - 1
+        mom_1m = aligned["asset"].iloc[-1] / aligned["asset"].iloc[-(lb_1m + 1)] - 1
+        mom_3m = aligned["asset"].iloc[-1] / aligned["asset"].iloc[-(lb_3m + 1)] - 1
+        bench_1w = aligned["benchmark"].iloc[-1] / aligned["benchmark"].iloc[-(lb_1w + 1)] - 1
+        bench_1m = aligned["benchmark"].iloc[-1] / aligned["benchmark"].iloc[-(lb_1m + 1)] - 1
+        bench_3m = aligned["benchmark"].iloc[-1] / aligned["benchmark"].iloc[-(lb_3m + 1)] - 1
 
+        rel_1w = mom_1w - bench_1w
         rel_1m = mom_1m - bench_1m
         rel_3m = mom_3m - bench_3m
 
@@ -120,8 +166,9 @@ def calculate_capital_flow_from_prices(
         trend_score = 1 if ma50 > ma200 else 0
 
         score = (
-            40 * np.clip((rel_3m + 0.10) / 0.20, 0, 1)
-            + 30 * np.clip((rel_1m + 0.06) / 0.12, 0, 1)
+            20 * np.clip((rel_1w + 0.03) / 0.06, 0, 1)
+            + 25 * np.clip((rel_1m + 0.06) / 0.12, 0, 1)
+            + 25 * np.clip((rel_3m + 0.10) / 0.20, 0, 1)
             + 20 * np.clip((mom_3m + 0.10) / 0.25, 0, 1)
             + 10 * trend_score
         )
@@ -184,7 +231,7 @@ with st.sidebar:
 
     st.divider()
     st.write("**Signalmodel**")
-    st.caption("Øg / Hold / Reducer baseres på risikojusteret momentum og 1M/3M trend.")
+    st.caption("Øg / Hold / Reducer baseres på Composite Score, 1W/1M rotation og den længere trend.")
 
     st.divider()
     st.write("**Capital Flow Score**")
@@ -197,23 +244,26 @@ with st.sidebar:
 
     st.divider()
     st.subheader("⚙️ Momentum-vægtning")
-    w_1m = st.slider("1M", 0.00, 0.60, 0.15, 0.05)
+    w_1w = st.slider("1W", 0.00, 0.40, 0.20, 0.05)
+    w_1m = st.slider("1M", 0.00, 0.60, 0.25, 0.05)
     w_3m = st.slider("3M", 0.00, 0.60, 0.25, 0.05)
-    w_6m = st.slider("6M", 0.00, 0.60, 0.30, 0.05)
-    w_12m = st.slider("12M", 0.00, 0.60, 0.30, 0.05)
+    w_6m = st.slider("6M", 0.00, 0.60, 0.20, 0.05)
+    w_12m = st.slider("12M", 0.00, 0.60, 0.10, 0.05)
 
-    weight_sum = w_1m + w_3m + w_6m + w_12m
+    weight_sum = w_1w + w_1m + w_3m + w_6m + w_12m
     if weight_sum == 0:
         st.error("Momentum-vægtene må ikke alle være 0.")
         st.stop()
 
+    w_1w = w_1w / weight_sum
     w_1m = w_1m / weight_sum
     w_3m = w_3m / weight_sum
     w_6m = w_6m / weight_sum
     w_12m = w_12m / weight_sum
 
     st.caption(
-        f"Normaliseret: {w_1m:.0%} / {w_3m:.0%} / {w_6m:.0%} / {w_12m:.0%}"
+        f"Normaliseret: 1W {w_1w:.0%} / 1M {w_1m:.0%} / 3M {w_3m:.0%} / "
+        f"6M {w_6m:.0%} / 12M {w_12m:.0%}"
     )
 
 
@@ -292,23 +342,57 @@ momentum_prices = prices[[c for c in portfolio_tickers if c in prices.columns]].
 try:
     momentum = calculate_momentum(
         momentum_prices,
+        w_1w=w_1w,
         w_1m=w_1m,
         w_3m=w_3m,
         w_6m=w_6m,
         w_12m=w_12m,
     )
 except TypeError:
-    momentum = calculate_momentum(momentum_prices)
+    try:
+        momentum = calculate_momentum(
+            momentum_prices,
+            w_1m=w_1m,
+            w_3m=w_3m,
+            w_6m=w_6m,
+            w_12m=w_12m,
+        )
+    except TypeError:
+        momentum = calculate_momentum(momentum_prices)
 
-# Sikrer at sidebar-vægte altid påvirker scoren, også hvis modules/momentum.py er gammel.
-if {"1M", "3M", "6M", "12M"}.issubset(momentum.columns):
+# 1W beregnes direkte fra kursdata, så appen også virker med en ældre modules/momentum.py.
+weekly_rows = [
+    {"Ticker": ticker, "1W": period_return(momentum_prices[ticker], 5)}
+    for ticker in momentum_prices.columns
+]
+weekly = pd.DataFrame(weekly_rows)
+
+if "Ticker" not in momentum.columns:
+    momentum = momentum.reset_index().rename(columns={momentum.index.name or "index": "Ticker"})
+
+if "1W" in momentum.columns:
+    momentum = momentum.drop(columns=["1W"])
+momentum = momentum.merge(weekly, on="Ticker", how="left")
+
+# Sikrer at sidebar-vægte altid påvirker scoren.
+required_momentum_cols = {"1W", "1M", "3M", "6M", "12M"}
+if required_momentum_cols.issubset(momentum.columns):
     momentum["MomentumScore"] = (
-        momentum["1M"].fillna(0) * w_1m
+        momentum["1W"].fillna(0) * w_1w
+        + momentum["1M"].fillna(0) * w_1m
         + momentum["3M"].fillna(0) * w_3m
         + momentum["6M"].fillna(0) * w_6m
         + momentum["12M"].fillna(0) * w_12m
     )
-    momentum["Signal"] = momentum.apply(local_action_signal, axis=1)
+
+    # Sammenligner afkast pr. omtrent samme tidsenhed: uge mod måned/4.
+    momentum["MomentumAcceleration"] = (
+        momentum["1W"] - (
+            0.60 * (momentum["1M"] / 4)
+            + 0.40 * (momentum["3M"] / 13)
+        )
+    )
+    momentum["RotationSignal"] = momentum.apply(rotation_signal, axis=1)
 
 report = portfolio.merge(momentum, on="Ticker", how="left")
 report = add_stop_loss(report)
@@ -329,6 +413,19 @@ for ticker in report["Ticker"].dropna().astype(str).str.strip():
 
 capital_flow = pd.DataFrame(capital_flow_rows).drop_duplicates("Ticker")
 report = report.merge(capital_flow, on="Ticker", how="left")
+
+# Composite Score: fælles 0-1 skala på tværs af momentum, acceleration og kapitalflow.
+report["MomentumRank"] = percentile_score(report["MomentumScore"])
+report["AccelerationScore"] = percentile_score(report["MomentumAcceleration"])
+report["CapitalFlowNormalized"] = (
+    pd.to_numeric(report["CapitalFlowScore"], errors="coerce").clip(0, 100) / 100
+)
+report["CompositeScore"] = (
+    0.60 * report["MomentumRank"].fillna(0.5)
+    + 0.20 * report["AccelerationScore"].fillna(0.5)
+    + 0.20 * report["CapitalFlowNormalized"].fillna(0.5)
+)
+report["Signal"] = report.apply(local_action_signal, axis=1)
 
 # Labels
 if "ETF_Navn" not in report.columns:
@@ -372,8 +469,10 @@ capital_cols = [
     "ETF_Label",
     "Ticker",
     "Weight",
+    "1W",
     "1M",
     "3M",
+    "RotationSignal",
     "CapitalFlowScore",
     "CapitalFlowSignal",
 ]
@@ -382,7 +481,7 @@ capital_display = report[capital_cols].copy()
 
 if "Weight" in capital_display.columns:
     capital_display["Weight"] = capital_display["Weight"].apply(lambda x: format_pct(x, 1))
-for col in ["1M", "3M"]:
+for col in ["1W", "1M", "3M"]:
     if col in capital_display.columns:
         capital_display[col] = capital_display[col].apply(lambda x: format_pct(x, 1))
 if "CapitalFlowScore" in capital_display.columns:
@@ -402,7 +501,7 @@ st.dataframe(
 )
 
 st.caption(
-    "Capital Flow Score er en proxy for sektorrotation: relativ styrke mod benchmark, 1M/3M momentum og 50/200-dages trend. "
+    "Capital Flow Score er en proxy for sektorrotation: relativ styrke mod benchmark, 1W/1M/3M momentum og 50/200-dages trend. "
     "Den bruges som beslutningsstøtte – ikke som automatisk køb/salg."
 )
 
@@ -476,11 +575,15 @@ st.subheader("Momentum ranking")
 show_cols = [
     "ETF_Label",
     "Weight",
+    "1W",
     "1M",
     "3M",
     "6M",
     "12M",
     "MomentumScore",
+    "MomentumAcceleration",
+    "CompositeScore",
+    "RotationSignal",
     "Volatility",
     "MaxDrawdown",
     "StopPct",
@@ -493,14 +596,16 @@ show_cols = [
 show_cols = [c for c in show_cols if c in report.columns]
 styled = report[show_cols].copy()
 
-if "MomentumScore" in styled.columns:
+if "CompositeScore" in styled.columns:
+    styled = styled.sort_values("CompositeScore", ascending=False, na_position="last")
+elif "MomentumScore" in styled.columns:
     styled = styled.sort_values("MomentumScore", ascending=False, na_position="last")
 
-for col in ["Weight", "1M", "3M", "6M", "12M", "Volatility", "MaxDrawdown", "StopPct", "AlarmPct"]:
+for col in ["Weight", "1W", "1M", "3M", "6M", "12M", "MomentumAcceleration", "Volatility", "MaxDrawdown", "StopPct", "AlarmPct"]:
     if col in styled.columns:
         styled[col] = styled[col].apply(lambda x: format_pct(x, 2))
 
-for col in ["MomentumScore", "Sharpe", "Sortino", "CapitalFlowScore"]:
+for col in ["MomentumScore", "CompositeScore", "Sharpe", "Sortino", "CapitalFlowScore"]:
     if col in styled.columns:
         styled[col] = styled[col].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
 
@@ -519,9 +624,9 @@ st.dataframe(
 # ---------------------------------------------------
 left, right = st.columns(2)
 with left:
-    st.subheader("1/3/6/12 mdr afkast")
+    st.subheader("1W / 1M / 3M / 6M / 12M afkast")
     returns_long = (
-        report[["ETF_Label", "1M", "3M", "6M", "12M"]]
+        report[["ETF_Label", "1W", "1M", "3M", "6M", "12M"]]
         .melt(id_vars="ETF_Label", var_name="Periode", value_name="Return")
         .dropna()
     )
@@ -539,11 +644,11 @@ with left:
 
 with right:
     st.subheader("Risk cloud")
-    if {"Volatility", "MomentumScore"}.issubset(report.columns):
+    if {"Volatility", "CompositeScore"}.issubset(report.columns):
         fig2 = px.scatter(
             report,
             x="Volatility",
-            y="MomentumScore",
+            y="CompositeScore",
             size="Exposure" if "Exposure" in report.columns else None,
             color="Signal" if "Signal" in report.columns else None,
             hover_name="ETF_Label",
@@ -557,10 +662,10 @@ with right:
 # ---------------------------------------------------
 st.subheader("Handlingsoversigt")
 
-buy_df = report.loc[report["Signal"].isin(["Øg"])].sort_values("MomentumScore", ascending=False)
-reduce_df = report.loc[report["Signal"].isin(["Reducer", "Sælg/undgå"])].sort_values("MomentumScore")
+buy_df = report.loc[report["Signal"].isin(["Øg"])].sort_values("CompositeScore", ascending=False)
+reduce_df = report.loc[report["Signal"].isin(["Reducer", "Sælg/undgå"])].sort_values("CompositeScore")
 gate_df = report.loc[(report["Sharpe"] < 1.0) | (report["Sortino"] < 1.5) | (report["MaxDrawdown"] < -0.30)]
-readout_df = report.loc[(report["MomentumScore"] < 0.5)]
+readout_df = report.loc[(report["CompositeScore"] < 0.40)]
 
 overview = pd.DataFrame({
     "Kategori": ["Top buys", "Top reductions", "Hard gate", "Hard read-out"],
@@ -584,20 +689,27 @@ report["TargetWeight"] = report["Weight"].fillna(0)
 for idx, row in report.iterrows():
     weight = row.get("Weight", 0)
     signal = row.get("Signal", "")
+    w1 = row.get("1W", None)
     m1 = row.get("1M", None)
     m3 = row.get("3M", None)
+    rotation = row.get("RotationSignal", "")
 
     if signal == "Øg":
         target = min(max(weight, weight * 1.05), POSITION_MAX)
     elif signal == "Hold":
+        target = weight
+    elif signal == "Afvent bekræftelse" and rotation == "Tidlig positiv vending":
         target = weight
     elif signal in ["Afvent", "Reducer", "Sælg/undgå"]:
         target = weight * 0.80
     else:
         target = weight
 
+    if pd.notnull(w1) and pd.notnull(m1) and w1 < 0 and m1 < 0:
+        target = min(target, weight * 0.75)
+
     if pd.notnull(m1) and pd.notnull(m3) and m1 < 0 and m3 < 0:
-        target = weight * 0.65
+        target = min(target, weight * 0.65)
 
     report.at[idx, "TargetWeight"] = target
 
@@ -632,6 +744,8 @@ rebal_cols = [
     "TradeDKK",
     "Sharpe",
     "Sortino",
+    "CompositeScore",
+    "RotationSignal",
     "Signal",
     "CapitalFlowScore",
     "CapitalFlowSignal",
@@ -645,7 +759,7 @@ for col in ["Weight", "TargetWeight"]:
         rebal_display[col] = rebal_display[col].apply(lambda x: format_pct(x, 1))
 if "TradeDKK" in rebal_display.columns:
     rebal_display["TradeDKK"] = rebal_display["TradeDKK"].apply(lambda x: f"{x:,.0f}".replace(",", ".") if pd.notnull(x) else "")
-for col in ["Sharpe", "Sortino", "CapitalFlowScore"]:
+for col in ["Sharpe", "Sortino", "CompositeScore", "CapitalFlowScore"]:
     if col in rebal_display.columns:
         rebal_display[col] = rebal_display[col].apply(lambda x: f"{x:.1f}" if pd.notnull(x) else "")
 
@@ -657,54 +771,72 @@ st.dataframe(zebra_table(rebal_display), use_container_width=True, hide_index=Tr
 csv = report.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Download CSV", csv, file_name="momentum_report.csv", mime="text/csv")
 
-pdf_bytes = create_pdf(report.sort_values("MomentumScore", ascending=False, na_position="last"))
+pdf_bytes = create_pdf(report.sort_values("CompositeScore", ascending=False, na_position="last"))
 st.download_button("Download PDF", pdf_bytes, file_name="momentum_report.pdf", mime="application/pdf")
 
 # ---------------------------------------------------
 # Rotation rules
 # ---------------------------------------------------
-st.subheader("Rotation signals and monthly rules")
-rotation_signals = pd.DataFrame({
-    "Theme": ["Korea", "SECO / Semiconductors", "Rare Earth / VWMX", "Uranium", "Defence", "Space", "Clean Energy", "Quantum"],
-    "Current signal": [
-        "Confirmed momentum; strong 1/3/6/12M",
-        "Confirmed momentum; now below 25% cap",
-        "1M negative despite strong 6/12M",
-        "1M and 3M negative",
-        "1M and 3M negative",
-        "Confirmed momentum but already overweight vs target",
-        "Positive but moderate momentum",
-        "Confirmed momentum and underweight",
-    ],
-    "Action": [
-        "Add modestly; cap because it overlaps with semis/electronics cycle.",
-        "Eligible for add back toward 25%, but avoid excessive concentration.",
-        "Reduce to target; no add until 1M > 0.",
-        "Hold/reduce only; no averaging down.",
-        "Reduce/hold only; no buy now.",
-        "Trim excess; keep core exposure.",
-        "Small add allowed.",
-        "Top buy, but keep as satellite due high volatility.",
-    ],
-})
-st.dataframe(zebra_table(rotation_signals), use_container_width=True, hide_index=True, height=table_height(rotation_signals, max_height=450))
+st.subheader("Rotationssignaler og regler")
+
+rotation_cols = [
+    "ETF_Label",
+    "1W",
+    "1M",
+    "3M",
+    "MomentumAcceleration",
+    "RotationSignal",
+    "CompositeScore",
+    "Signal",
+]
+rotation_cols = [c for c in rotation_cols if c in report.columns]
+rotation_display = report[rotation_cols].copy().sort_values(
+    "CompositeScore", ascending=False, na_position="last"
+)
+
+for col in ["1W", "1M", "3M", "MomentumAcceleration"]:
+    if col in rotation_display.columns:
+        rotation_display[col] = rotation_display[col].apply(lambda x: format_pct(x, 2))
+if "CompositeScore" in rotation_display.columns:
+    rotation_display["CompositeScore"] = rotation_display["CompositeScore"].apply(
+        lambda x: f"{x:.2f}" if pd.notnull(x) else ""
+    )
+
+st.dataframe(
+    zebra_table(rotation_display),
+    use_container_width=True,
+    hide_index=True,
+    height=table_height(rotation_display, max_height=650),
+)
 
 monthly_rules = pd.DataFrame({
-    "Rule": ["Momentum score", "Momentum gate", "Positive reversal", "Momentum weakening", "Confirmed momentum", "Risk KPI"],
-    "Implementation": [
-        "Sidebar weights: 1M / 3M / 6M / 12M",
-        "Do not add to ETFs with 1M < 0 unless clear positive reversal exists.",
-        "1M > 0 and 1M > average(3M, 6M).",
-        "1M < 0 while 6M/12M remain positive - protect gains, no averaging down.",
-        "1/3/6/12M all positive - eligible for buy/overweight, subject to caps.",
-        "Track portfolio Sharpe and Sortino weekly; deterioration confirms rising drawdown risk or poor rebalancing value.",
+    "Regel": [
+        "Momentum Score",
+        "Acceleration",
+        "Tidlig vending",
+        "Købsfilter",
+        "Negativ rotation",
+        "Composite Score",
+    ],
+    "Implementering": [
+        "1W / 1M / 3M / 6M / 12M vægtes via sidebaren.",
+        "1W sammenlignes med skaleret 1M og 3M for at opdage ændringer tidligere.",
+        "1W > 0 samtidig med 1M < 0 markeres, men kræver bekræftelse før køb.",
+        "Øg kræver positiv 1W, 1M og 3M samt Composite Score på mindst 0,75.",
+        "Negativ 1W, 1M og 3M udløser Sælg/undgå; negativ 1W og 1M giver reduktion.",
+        "60% momentumrangering, 20% acceleration og 20% Capital Flow.",
     ],
 })
-st.dataframe(zebra_table(monthly_rules), use_container_width=True, hide_index=True, height=table_height(monthly_rules, max_height=350))
+st.dataframe(
+    zebra_table(monthly_rules),
+    use_container_width=True,
+    hide_index=True,
+    height=table_height(monthly_rules, max_height=400),
+)
 
 st.caption(
-    "Takeaway: Buy strength, trim concentration and do not average down in weak 1M trends. "
-    "The portfolio is high-performing but still high-beta thematic exposure."
+    "Modellen reagerer tidligere på rotation, men en enkelt positiv uge udløser ikke automatisk køb. "
+    "Tidlige vendinger skal bekræftes af den bredere trend og Composite Score."
 )
 
 # ---------------------------------------------------
@@ -723,6 +855,7 @@ kpi = pd.DataFrame({
     "Metric": [
         "Portfolio Sharpe",
         "Portfolio Sortino",
+        "1W momentum",
         "1M momentum",
         "12M est. portfolio return",
         "Max single ETF weight",
@@ -732,6 +865,7 @@ kpi = pd.DataFrame({
     "Value": [
         f"{portfolio_sharpe:.2f}" if portfolio_sharpe is not None else "-",
         f"{portfolio_sortino:.2f}" if portfolio_sortino is not None else "-",
+        f"{report['1W'].mean():.1%}",
         f"{report['1M'].mean():.1%}",
         f"{report['12M'].mean():.1%}",
         f"{top_weight} ({top_weight_pct:.1%})",
@@ -741,6 +875,7 @@ kpi = pd.DataFrame({
     "Read-out": [
         "🟢 Strong" if portfolio_sharpe and portfolio_sharpe > 2 else "🟡 Moderate",
         "🟢 Strong" if portfolio_sortino and portfolio_sortino > 3 else "🟡 Moderate",
+        "🟢 Positive" if report["1W"].mean() > 0 else "🔴 Weak",
         "🟢 Positive" if report["1M"].mean() > 0 else "🔴 Weak",
         "🟢 Strong trend" if report["12M"].mean() > 0.5 else "🟡 Neutral",
         "🟡 Watch concentration" if top_weight_pct > 0.20 else "🟢 Balanced",
@@ -750,7 +885,7 @@ kpi = pd.DataFrame({
 })
 st.dataframe(zebra_table(kpi), use_container_width=True, hide_index=True, height=table_height(kpi, max_height=450))
 
-heat_cols = ["1M", "3M", "6M", "12M"]
+heat_cols = ["1W", "1M", "3M", "6M", "12M"]
 heat = report[["ETF_Label"] + heat_cols].set_index("ETF_Label")
 
 fig_heat = px.imshow(
@@ -763,4 +898,4 @@ fig_heat.update_layout(height=700, coloraxis_colorbar_title="Afkast %")
 st.plotly_chart(fig_heat, use_container_width=True)
 
 st.caption("Hard truth: Høj Sharpe/Sortino er positivt, men beskytter ikke mod koncentration og drawdown.")
-st.info("Næste udviklingstrin: TradingView webhook-modul, signal-log og automatisk ugentlig rapport.")
+st.info("Næste udviklingstrin: signal-log, ændring i Composite Score siden sidste kørsel og TradingView webhook-modul.")
