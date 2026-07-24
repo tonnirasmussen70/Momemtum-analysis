@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -237,6 +239,30 @@ def load_portfolio_from_uploads(files):
     return combined
 
 
+@st.cache_data(show_spinner=False)
+def load_portfolio_from_repository(file_paths):
+    frames = []
+
+    for file_path in file_paths:
+        path = Path(file_path)
+
+        if not path.exists():
+            continue
+
+        raw = load_excel_file(path)
+        frames.append(
+            standardize_portfolio(raw, default_source=path.name)
+        )
+
+    if not frames:
+        return pd.DataFrame()
+
+    combined = pd.concat(frames, ignore_index=True)
+    total = combined["Exposure"].sum(skipna=True)
+    combined["Weight"] = combined["Exposure"] / total if total and total > 0 else None
+    return combined
+
+
 @st.cache_data(show_spinner=True)
 def get_prices(tickers, period):
     return fetch_prices(tickers, period=period)
@@ -252,12 +278,44 @@ st.caption(
 )
 
 with st.sidebar:
-    st.header("Upload portefølje")
-    uploaded_files = st.file_uploader(
-        "Upload AI_ETF.xlsx / AI_Stock.xlsx / AI_portfolio.xlsx",
-        type=["xlsx", "xls"],
-        accept_multiple_files=True,
+    st.header("Datakilde")
+
+    data_mode = st.radio(
+        "Vælg datakilde",
+        ["Automatisk fra repository", "Manuel upload"],
+        index=0,
     )
+
+    uploaded_files = None
+    repository_files = [
+        "AI_ETF.xlsx",
+        "AI_Stock.xlsx",
+        "AI_portfolio.xlsx",
+    ]
+
+    if data_mode == "Manuel upload":
+        uploaded_files = st.file_uploader(
+            "Upload AI_ETF.xlsx / AI_Stock.xlsx / AI_portfolio.xlsx",
+            type=["xlsx", "xls"],
+            accept_multiple_files=True,
+        )
+    else:
+        available_repository_files = [
+            file_name for file_name in repository_files
+            if Path(file_name).exists()
+        ]
+
+        if available_repository_files:
+            st.caption(
+                "Indlæser automatisk: "
+                + ", ".join(available_repository_files)
+            )
+        else:
+            st.warning(
+                "Ingen porteføljefiler blev fundet i repository."
+            )
+
+    st.divider()
 
     period = st.selectbox(
         "Historik til beregning",
@@ -298,12 +356,31 @@ with st.sidebar:
     )
 
 
-if not uploaded_files:
-    st.info("Upload én eller flere Excel-filer i venstre side for at starte analysen.")
-    st.stop()
-
 try:
-    portfolio = load_portfolio_from_uploads(uploaded_files)
+    if data_mode == "Manuel upload":
+        if not uploaded_files:
+            st.info(
+                "Upload én eller flere Excel-filer i venstre side for at starte analysen."
+            )
+            st.stop()
+
+        portfolio = load_portfolio_from_uploads(uploaded_files)
+    else:
+        available_repository_files = [
+            file_name for file_name in repository_files
+            if Path(file_name).exists()
+        ]
+
+        if not available_repository_files:
+            st.error(
+                "Kunne ikke finde AI_ETF.xlsx, AI_Stock.xlsx eller "
+                "AI_portfolio.xlsx i repository."
+            )
+            st.stop()
+
+        portfolio = load_portfolio_from_repository(
+            available_repository_files
+        )
 except Exception as exc:
     st.error(f"Datafejl: {exc}")
     st.stop()
