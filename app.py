@@ -24,12 +24,28 @@ POSITION_MAX = 0.20
 # ---------------------------------------------------
 # Hjælpefunktioner
 # ---------------------------------------------------
-def zebra_table(df: pd.DataFrame):
+def zebra_table(df: pd.DataFrame, formats: dict | None = None):
+    """Returnér en ensartet tabelstyling med zebra-rækker og røde negative tal.
+
+    Værdierne bevares som numeriske typer, så farvereglen altid vurderes på
+    den faktiske værdi. Visningsformatering håndteres via ``formats``.
+    """
+
     def zebra(row):
         bg = "#101826" if row.name % 2 == 0 else "#162033"
         return [f"background-color: {bg}"] * len(row)
 
-    return df.style.apply(zebra, axis=1)
+    def negative_text(value):
+        if pd.isna(value):
+            return ""
+        if isinstance(value, (int, float, np.integer, np.floating)) and value < 0:
+            return "color: #ff4b4b; font-weight: 600;"
+        return ""
+
+    styler = df.style.apply(zebra, axis=1).map(negative_text)
+    if formats:
+        styler = styler.format(formats, na_rep="")
+    return styler
 
 
 def table_height(df: pd.DataFrame, row_px: int = 42, max_height: int = 900):
@@ -661,21 +677,20 @@ with tab_flow:
     ]
     capital_display = report[[c for c in capital_cols if c in report.columns]].copy()
 
-    if "Weight" in capital_display.columns:
-        capital_display["Weight"] = capital_display["Weight"].apply(lambda x: format_pct(x, 1))
-    for col in ["1W", "1M", "3M"]:
-        if col in capital_display.columns:
-            capital_display[col] = capital_display[col].apply(lambda x: format_pct(x, 1))
     if "CapitalFlowScore" in capital_display.columns:
         capital_display = capital_display.sort_values(
             "CapitalFlowScore", ascending=False, na_position="last"
         )
-        capital_display["CapitalFlowScore"] = capital_display["CapitalFlowScore"].apply(
-            lambda x: f"{x:.1f}" if pd.notnull(x) else ""
-        )
+
+    capital_formats = {
+        col: "{:.1%}" for col in ["Weight", "1W", "1M", "3M"]
+        if col in capital_display.columns
+    }
+    if "CapitalFlowScore" in capital_display.columns:
+        capital_formats["CapitalFlowScore"] = "{:.1f}"
 
     st.dataframe(
-        zebra_table(capital_display),
+        zebra_table(capital_display, capital_formats),
         use_container_width=True,
         hide_index=True,
         height=table_height(capital_display, max_height=650),
@@ -738,27 +753,21 @@ with tab_momentum:
         "CompositeScore", ascending=False, na_position="last"
     )
 
-    for col in [
-        "Weight", "1W", "1M", "3M", "6M", "12M",
-        "MomentumAcceleration", "Volatility", "MaxDrawdown",
-        "StopPct", "AlarmPct",
-    ]:
-        if col in styled.columns:
-            styled[col] = styled[col].apply(lambda x: format_pct(x, 2))
-
-    for col in ["MomentumScore", "CompositeScore", "CapitalFlowScore"]:
-        if col in styled.columns:
-            styled[col] = styled[col].apply(
-                lambda x: f"{x:.2f}" if pd.notnull(x) else ""
-            )
-
-    if "StopPrice" in styled.columns:
-        styled["StopPrice"] = styled["StopPrice"].apply(
-            lambda x: f"{x:.2f}" if pd.notnull(x) else ""
-        )
+    momentum_formats = {
+        col: "{:.2%}" for col in [
+            "Weight", "1W", "1M", "3M", "6M", "12M",
+            "MomentumAcceleration", "Volatility", "MaxDrawdown",
+            "StopPct", "AlarmPct",
+        ] if col in styled.columns
+    }
+    momentum_formats.update({
+        col: "{:.2f}" for col in [
+            "MomentumScore", "CompositeScore", "CapitalFlowScore", "StopPrice"
+        ] if col in styled.columns
+    })
 
     st.dataframe(
-        zebra_table(styled),
+        zebra_table(styled, momentum_formats),
         use_container_width=True,
         hide_index=True,
         height=table_height(styled),
@@ -852,21 +861,20 @@ with tab_rebalancing:
         [c for c in rebal_cols if c in report.columns]
     ].copy()
 
-    for col in ["Weight", "TargetWeight"]:
-        if col in rebal_display.columns:
-            rebal_display[col] = rebal_display[col].apply(lambda x: format_pct(x, 1))
+    rebal_formats = {
+        col: "{:.1%}" for col in ["Weight", "TargetWeight"]
+        if col in rebal_display.columns
+    }
     if "TradeDKK" in rebal_display.columns:
-        rebal_display["TradeDKK"] = rebal_display["TradeDKK"].apply(
-            lambda x: f"{x:,.0f}".replace(",", ".") if pd.notnull(x) else ""
-        )
-    for col in ["Sharpe", "Sortino", "CompositeScore", "CapitalFlowScore", "AIConfidence"]:
-        if col in rebal_display.columns:
-            rebal_display[col] = rebal_display[col].apply(
-                lambda x: f"{x:.1f}" if pd.notnull(x) else ""
-            )
+        rebal_formats["TradeDKK"] = lambda x: f"{x:,.0f}".replace(",", ".")
+    rebal_formats.update({
+        col: "{:.1f}" for col in [
+            "Sharpe", "Sortino", "CompositeScore", "CapitalFlowScore", "AIConfidence"
+        ] if col in rebal_display.columns
+    })
 
     st.dataframe(
-        zebra_table(rebal_display),
+        zebra_table(rebal_display, rebal_formats),
         use_container_width=True,
         hide_index=True,
         height=table_height(rebal_display),
@@ -886,18 +894,15 @@ with tab_rebalancing:
             "CompositeScore", ascending=False, na_position="last"
         )
 
-        for col in ["1W", "1M", "3M", "MomentumAcceleration"]:
-            if col in rotation_display.columns:
-                rotation_display[col] = rotation_display[col].apply(
-                    lambda x: format_pct(x, 2)
-                )
+        rotation_formats = {
+            col: "{:.2%}" for col in ["1W", "1M", "3M", "MomentumAcceleration"]
+            if col in rotation_display.columns
+        }
         if "CompositeScore" in rotation_display.columns:
-            rotation_display["CompositeScore"] = rotation_display["CompositeScore"].apply(
-                lambda x: f"{x:.2f}" if pd.notnull(x) else ""
-            )
+            rotation_formats["CompositeScore"] = "{:.2f}"
 
         st.dataframe(
-            zebra_table(rotation_display),
+            zebra_table(rotation_display, rotation_formats),
             use_container_width=True,
             hide_index=True,
             height=table_height(rotation_display, max_height=650),
